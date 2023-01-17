@@ -295,13 +295,13 @@ hist <- ggplot(zones) +
 hist
 ```
 
-You could customize the plot further by [applying a theme](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#apply-a-ggplot-theme) or [customizing the axes].
+You could customize the plot further by [applying a theme](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#apply-a-ggplot-theme) or [customizing the axes](https://c-voulgaris.github.io/gsd-ses-5394-sp2023/skills/a2.html#customize-axes-and-legends).
 
 # Create an interactive map
 
 Even if your deliverable will be all static content in a report, it can be helpful to create an interactive map for your own use to explore your data. For example, it's a useful way to find the GEOID for a zone in a specific location.
 
-I'll use the `leaflet` package to create an interactive map. I'll save it to an html file so I can open the file to view in my browser (once you've saved it, the html files will appear in your repository directory on your computer and also in your files pane in RStudio - if you push it to GitHub, you'll also be able to view it on your [github.io page](https://gsd-ses-5394-s2022.github.io/Richmond/zones/boundaries.html){target="_blank"}). I'll add a popup so you can click on a zone to get the GEOID (which you can then just copy/paste from your browser to use in other code).
+I'll use the `leaflet` package to create an interactive map. I'll save it to an html file so I can open the file to view in my browser. I'll add a popup so you can click on a zone to get the GEOID ([see the result here](https://c-voulgaris.github.io/gsd-ses-5394-sp2023/Examples/boundaries.html){target="_blank"}).
 
 ```{r, eval=FALSE, warning=FALSE}
 library(leaflet)
@@ -698,7 +698,7 @@ You'll need to search for the names of the variables you want to include in your
 
 If you've already loaded the `tidycensus` package, you can type `View(load_variables(2019, "acs5"))`**\*** into your console to interactively search for variables that you'd like to include in your analysis. That will open a table of all the available variables in your viewer. Here's what you'll see if you start searching for variables that have to do with vehicles:
 
-![](images/var_search_srnsht.png)
+![](var_search_srnsht.png)
 
 You'll see that the table has three columns. 
 
@@ -708,7 +708,7 @@ You'll see that the table has three columns.
 
 Many tables are cross-tabulations that present the number of people, homes, or households in each combination of two categories. Many values can be found in multiple tables. For example, you can find the total number of workers who commute to work by car in B08006 (Sex of worker by means of transportation to work) and B08101 (Means of transportation to work by age).
 
-**\*** *The first argument (`2019`) indicates that you want the variables that are available for 2019 and the second argument (`"acs5"`) indicates that you want variables that are included in the 5-year sample of the American Community Survey. The 5-year sample is from survey respondents pooled over a 5-year period. An alternative is `"acs1"`, which would give you just the households who completed the survey in 2019 (which is a much smaller sample, so those estimates would have more uncertainty associated with them). You could also specify `"sf1"` instead of `"acs5"` or `"acs1"` if you wanted data from the decennial census. The decennial census is meant to include everyone, so there is no sampling error, but fewer variables are available.*
+**\*** *The first argument (`2019`) indicates that you want the variables that are available for 2019 and the second argument (`"acs5"`) indicates that you want variables that are included in the 5-year sample of the American Community Survey. The 5-year sample is from survey respondents pooled over a 5-year period. An alternative is `"acs1"`, which would give you just the households who completed the survey in 2019 (which is a much smaller sample, so those estimates would have more uncertainty associated with them). You could also specify `"sf1"` instead of `"acs5"` or `"acs1"` if you wanted data from the decennial census. The decennial census is meant to include everyone, so there is no sampling error, but fewer variables are available. The 2020 decennial census hasn't been released yet, but you can get a very limited set of variables from the redistricting data -- use `"pl"` rather than `"sf1"` in that case.*
 
 # Join two data frames
 

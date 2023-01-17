@@ -79,7 +79,7 @@ write_csv(st_drop_geometry(honolulu_data),
                       "data",
                       "hi_zone_data.csv")) 
 
-st_write(honolulu_tract_hhs,
+st_write(honolulu_data,
          here("Examples",
               "data",
               "hi_zone_data.geojson"),
