@@ -17,12 +17,11 @@ The followings skills will be useful for Analysis Assignment 2. They are listed 
 *Note: In general, you should load all your libraries at the beginning of your script or markdown file. In these examples, I'm loading libraries at the top of each code chunk to make it more clear which methods use which packages.*
 
 * **Apply a ggplot theme:** You have a lot of flexibility in designing your ggplot charts and maps, but some pre-defined themes can save you some time on that.
-* **Calculate new variables:** When you download data from the census or from LEHD, you might need to combine multiple variables together to get the variable you actually want. For example, you might need to add the number of households in each of multiple income categories to get the number in a combined income category, or you might need to divide the number of jobs by the area of each tract to get an employment density.
 * **Collapse data:** This is useful if you want to collapse block-level data to the tract level, or tract-level data to the region level.
 * **Create a chloropleth map:** A static chloropleth map is a useful way to display variation across space on a figure you want to include in report.
 * **Create a dot-density map:** A dot-density map can be useful for visualizing how the densities of things in one or more categories vary across space, without having to actually calculate densities.
 * **Create a histogram:** A histogram is a helpful way to illustrate the variation in a variable.
-* **Create an interactive map:** Even if your deliverable will be all static content in a report, it can be helpful to create an interactive map for your own use to explore your data. For example, it's a useful way to find the GEOID for a zone in a specific location.
+* **Create an interactive map:** Even if your deliverable will be all static content in a report, it can be helpful to create an interactive map for your own use to explore the geography of your study area.
 * **Create a tree map:** Tree maps are nice way to visualize proportions. 
 * **Customize axes and legends:** You'll likely want to define titles for the axes and legends on any graphics you create. You might also want to control how number are displayed on axes and legends.
 * **Define a color ramp:** There are several predefined color palettes you can use, and some useful functions you can use to select colors in `ggplot`.
@@ -31,9 +30,6 @@ The followings skills will be useful for Analysis Assignment 2. They are listed 
 * **Find census variables:** You'll need to search for the names of the variables you want to include in your analysis.
 * **Join two data frames:** If you have employment data in one dataframe and population data in another, you'll want to combine them into a single dataframe.
 * **List census variable names:** Once you've identified the census variable you want to include in your analysis, you can create a list of them in which you define your own variable names.
-* **Organize data columns:** At some point, you'll find you have more columns in your dataframe that you need. You can use the `select()` function to delete variables you don't need and also to reorder columns. 
-* **Separate geometry from dataset:** You might have situations where you only need the zone boundaries, or you only need the zone data without the boundaries. You can separate them out before you save them.
-* **Summarize tract statistics:** Histograms and maps are great, but a table can also be really informative.
 * **Write data to a file:** When you have all the data how you want it, you should save it so you can use it for subsequent assignments. 
 * **Write figures to a file:** Creating maps and charts in RMarkdown is great, but you'll eventually want to save them as files you can include in a report or presentation.
 
@@ -127,39 +123,6 @@ library(tidyverse)
 hh_size_map +
   theme_void()
 ```
-
-# Calculate new variables
-
-When you download data from the census or from LEHD, you might need to combine multiple variables together to get the variable you actually want. For example, you might need to add the number of households in each of multiple income categories to get the number in a combined income category, or you might need to divide the number of jobs by the area of each tract to get an employment density.
-
-If you've just [downloaded your census data](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#download-census-tract-data) into a dataframe called `census`, you'll probably need to combine some of your variables into new variables. 
-
-For example, you might have variables for 16 different income categories, and you only want five income categories (perhaps based on [regional quintiles](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#get-regional-data)).
-
-Notice that the variable names in your dataframe differ from the ones you [may have specified](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#list-census-variable-names). The `get_acs` function creates two columns for each variable. The estimated value is in a column with the name you specified with an E appended (E for estimate). There is also a column with the name you specified and an M appended to indicate the margin of error for that estimate.  
-
-```{r}
-library(tidyverse)
-
-census <- census %>%
-  mutate(inc_quint_1 = inc_lt_10kE +
-                       inc_btw_10k_15kE +
-                       inc_btw_15k_20kE +
-                       inc_btw_20k_25kE,
-         inc_quint_2 = inc_btw_25k_30kE +
-                       inc_btw_30k_35kE +
-                       inc_btw_35k_40kE +
-                       inc_btw_40k_45kE +
-                       inc_btw_45k_50kE,
-         inc_quint_3 = inc_btw_50k_60kE +
-                       inc_btw_60k_75kE,
-         inc_quint_4 = inc_btw_75k_100kE,
-         inc_quint_5 = inc_btw_100k_125kE +
-                       inc_btw_125k_150kE +
-                       inc_btw_150k_200kE +
-                       inc_gt_200kE)
-```
-
 
 # Collapse data
 
@@ -782,97 +745,6 @@ vars <- c(total_hhs = 'B08203_001',
           inc_btw_150k_200k = 'B19001_016',
           inc_gt_200k = 'B19001_017')
 ```
-
-# Organize data columns
-
-At some point, you'll find you have more columns in your dataframe that you need. You can use the `select()` function to delete variables you don't need and also to reorder columns. 
-
-Here are the first few rows of a dataframe with a 51 columns:
-
-```{r, message=FALSE, warning=FALSE}
-library(knitr)
-library(kableExtra)
-
-kable(head(zones)) %>%
-  scroll_box(width = "100%", height = "500px")
-```
-
-The only ones I want to keep are these 14:
-
-* `GEOID`
-* `total_hhsE`
-* `no_vehE`
-* `hh_1personE`
-* `hh_2personE`
-* `hh_3personE`
-* `hh_4person_plusE`
-* `total_emp`
-* `basic_emp`
-* `retail_emp`
-* `service_emp`
-
-That's the order they currently appear in, but for whatever reason, I'd like the employment variables to come first.
-
-```{r}
-library(knitr)
-library(kableExtra)
-library(tidyverse)
-
-final_data <- zones %>%
-  select(GEOID, 
-         total_emp,
-         basic_emp,
-         retail_emp,
-         service_emp,
-         total_hhsE,
-         no_vehE,
-         hh_1personE,
-         hh_2personE,
-         hh_3personE,
-         hh_4person_plusE)
-```
-
-And now we can see that we're left with the variables we selected in the order we specified.
-
-```{r}
-kable(head(final_data)) %>%
-  scroll_box(width = "100%", height = "500px")
-```
-
-# Separate geometry from dataset
-
-You might have situations where you only need the zone boundaries, or you only need the zone data without the boundaries. You can separate them out before you save them.
-
-If you just need the zone boundaries without any of the associated variables, you can use `select()` to drop everything except the geometry column and the GEOID (you still want the GEOID so you can identify the tract later).
-
-```{r}
-zone_boundaries <- final_data %>%
-  select(GEOID, geometry)
-```
-
-If you just want the data without the geometry, you can use `st_drop_geometry()`.
-
-```{r, eval=FALSE}
-zone_data <- final_data %>%
-  st_drop_geometry()
-```
-
-# Summarize tract statistics
-
-Histograms and maps are great, but a table can also be really informative. You can calculate statistics individually and then just type them into a table in your report document. Here's are the mean and standard deviation for the average household size across all census tracts (`na.rm = TRUE` means R can ignore any missing values)
-
-```{r}
-mean(census$avg_hh_size, na.rm = TRUE)
-
-sd(census$avg_hh_size, na.rm = TRUE)
-```
-
-You can also use summary() to get a quick set of summary statistics.
-
-```{r}
-summary(census$avg_hh_size)
-```
-
 
 # Write data to a file
 
