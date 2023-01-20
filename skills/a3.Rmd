@@ -1,0 +1,153 @@
+---
+title: "Skills for Analysis Assignment 3"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents an approach to generating road network skims for Analysis 
+Assignment 3. Most of the instruction here is in the form of short videos, 
+totalling about an hour.
+
+# Step 1: Download road network from OpenStreetMap
+
+OpenStreetMap is a reasonably good source or routable street network data.
+You can download OpenStreetMap data for your study area using
+[https://extract.bbbike.org/](https://extract.bbbike.org/){target="_blank"}.
+
+Click on the link below for a video walking through that process. In the 
+video, I refer to an interactive leaflet map of my study area. You can find
+an example of how to create an interactive leaflet map on the 
+[skills page from Analysis Assignment 2](https://c-voulgaris.github.io/gsd-ses-5394-sp2023/skills/a2.html#create-an-interactive-map){target="_blank"}.
+
+[How to download .osm file from bbbike.org](https://harvard.zoom.us/rec/share/s9evMhXgJ0tm38f8xhlxOfWF09k1BV3qHs2xZp27hOWFqZ6TRDlgitPq-0eRYOg1.UB4Px3wx75j9sA2y?startTime=1674153904000){target="_blank"}(4:52)
+
+# Step 2: Export traffic analysis zone centroids
+
+You should have a spatial data file with the boundaries of each of your
+zone centroids. Here is a video that shows how to open a geojson file in
+TransCAD and export it as a set of centroid points in the TransCAD file 
+format.
+
+[How do export zone centroids in TransCAD](https://harvard.zoom.us/rec/share/1MrGljBuyph0i4Oh65dV91_J6DRLN_yqiv5lZKHo0p5cr9yAl3iyIMBI73IzciK-.-c2Kmr1l0_LGX9mK?startTime=1674071264000){target="_blank"}(2:21)
+
+# Step 3: Import OpenStreetMap data to TransCAD
+
+You'll need to import the roads data you downloaded from OpenStreetMap into
+TransCAD. This is not difficult, but it does take a long time (in this example, it took about 25 minutes). Here is a 
+short video that demonstrates the process.
+
+[Importing OpenStreetMap data as a roads layer in TransCAD](https://harvard.zoom.us/rec/share/EJouCappoIF-Drcq3hc-hfv1v28Iqdel-8lciquXqJcQCSmj1OD99rktwnYjpr5G.-glk0ZCCzTytfTOU?startTime=1674222689000){target="_blank"}(6:06)
+
+# Step 4: Filter your road network by road type
+
+OpenStreetMap datasets can contain one of several tags to indicate the 
+something about each road segment's functional classification. TransCAD will 
+save these in a column called "Type" when it imports OpenStreetMap data. You 
+can see a list of possible roadway types here: [https://wiki.openstreetmap.org/wiki/Key:highway#Values](https://wiki.openstreetmap.org/wiki/Key:highway#Values){target="_blank"}.
+
+Your zoning system probably isn't detailed enough to capture short, 
+motorized trips. I recommend you only include the following road classes in
+your network model (not all of these will necessarily be present in your
+dataset):
+
+* motorway
+* trunk
+* primary
+* secondary
+* tertiary
+* motorway_link
+* trunk_link
+* primary_link
+* secondary_link
+* tertiary_link
+
+Here's a short video that demonstrates how to select and delete roads
+by functional class.
+
+[Deleting roads by type in TransCAD](https://harvard.zoom.us/rec/share/ANvSffgAbZH6ZcbkvH-I26h-YUiKi6jF9kBAPl-Hii_z--4MOEaFN33mTabakSa-.WLl1dRy39zqIMNRZ?startTime=1674224882000){target="_blank"}(6:59)
+
+# Step 5: Add zones and centroids as layers to your TransCAD map
+
+The next thing you'll want to do is add your traffic analysis zones 
+and centroids to the same TransCAD map that shows your roads. Here
+is a short video that demonstrates how to do that:
+
+[Adding layers to a TransCAD map](https://harvard.zoom.us/rec/share/nREd-VQZTC_c5OUXgHkaS08hXnqbXGiEaiUxaRZiWl8ihZ5AaI5r9inRdx76X9z3.oSKqAeYz9T37HHeO?startTime=1674225518000){target="_blank"}(2:39)
+
+# Step 6: Trim the road network to your study area
+
+In addition to containing lower functional classifications that 
+what I need in my model, the initial OpenStreetMap dataset I downloaded
+also includes a lot of roads I don't need, either because they are 
+outside my study area or because they are not connected to the rest
+of the network. This video shows how you would go through and 
+delete those.
+
+[Deleting roadway segments from a TransCAD map](https://harvard.zoom.us/rec/share/gAhwpMLW09bcTAh1C82e77kJBi90f6KDX6geHMjC4l2on4qEPi-3kDnMnRFmgZLR.mLSTSBonCPCHPbXf?startTime=1674225756000){target="_blank"}(3:06)
+
+# Step 7: Create a centroid field for your road layer nodes
+
+The next step is to add a column in the node layer associated with 
+your roads layer to indicate which zones are centroids.
+
+[Creating a centroid field](https://harvard.zoom.us/rec/share/i-O7Hedx2xe2xCqsrQW3iBdSmTu2vpmr5-_U6iafORqPpELFoj7kERzwdpgHRv_J.yz2_ehm8N4UchxgK?startTime=1674235631000){target="_blank"}(3:03)
+
+# Step 8: Add centroids and centroid connectors to your road layer
+
+Next, you'll need to add centroids and centroid connectors to your 
+roads layer.
+
+[Creating centroids and connectors](https://harvard.zoom.us/rec/share/4e7x_dGSRserrOWqikmCJdC5plSUyoSTUNAaWjz8lVLcZcdpDVL3Vsc2mUpWVCiy.0tlWz7NMrtNpIP2C?startTime=1674235911000){target="_blank"}(7:25)
+
+# Step 9: Define vehicle speeds by road type
+
+You'll need to define the travel speed for each roadway segment,
+including the centroid connectors.
+
+[Defining vehicle speeds](https://harvard.zoom.us/rec/share/SlfXyiSNmPgdltdFOEoN72O1xEAqXjf6do9kvSWHQAxm4xbf8UHQT5DIyFRWuP-o.tfS2nMGGCXb4tyj4?startTime=1674236526000){target="_blank"}(7:46)
+
+# Step 10: Calculate segment travel times
+
+Next, you'll need to calculate the travel time for each segment.
+
+[Calculating segment travel times](https://harvard.zoom.us/rec/share/JNpeNRCOImZhI432m1WEkf5tUW-be-3APpBcfZyezVfa-2LRPnrO3EL35B4TurAX.Pb5EUMmibTaL0jpW?startTime=1674237061000){target="_blank"}(2:44)
+
+# Step 11: Create a network from your road layer
+
+Once you've have your road layer all set up, you'll use it to create
+a network file.
+
+[Generating a TransCAD network file](https://harvard.zoom.us/rec/share/ZGxdQXh9ShmI9aWyfhZYN08GqnA1nZI_yT6jqbcXM9B0wG_ZQPnVJQ3JAUMEOiZr.DiERvnMMN9lrKjwa?startTime=1674240088000){target="_blank"}(1:52)
+
+# Step 12: Skim the road network
+
+Now you're finally ready to generate a travel time matrix.
+
+[Skimming the road network](https://harvard.zoom.us/rec/share/yPE5BpQ35cAsBdIcBSUhWxT3hNgjq9l9iokIxid9sQ4UI6tKIwLSwlRg7UjGKgU8.GOstFMIMXU-OCXsr?startTime=1674240286000){target="_blank"}(2:25)
+
+# Step 13: Check for connectivity problems
+
+If you produce a complete matrix on your first try, that's wonderful!
+But it's more likely you'll have some connectivity problems you'll need
+to investigate.
+
+[Trouble-shooting connectivity problems](https://harvard.zoom.us/rec/share/Tq90OCWViLNMEohHWdPmouyXJBIUwI2o0LVPGfwBTLwoQEErSa3694VbIMfapIWT.bNYNeVNr-okKx2eJ?startTime=1674243389000){target="_blank"}(8:33)
+
+# Step 14: Iterate
+
+It is unlikely you'll be able to create a complete set of skims
+on your first try. You'll probably have to delete your centroids and
+centroid connectors, then delete any links that might be causing 
+problems (perhaps because they are not connected to the rest of the 
+network at all, or because your centroid is only connected to one-way
+links). Then you'll create new centroid connectors (maybe with more 
+connectors per centroid), create a new network, and see if that network
+is any more complete.
