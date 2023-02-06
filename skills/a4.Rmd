@@ -1,0 +1,86 @@
+---
+title: "Skills for Analysis Assignment 4"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents an approach to generating road network skims for Analysis 
+Assignment 4. Most of the instruction here is in the form of short videos, 
+totalling about 23 minutes.
+
+# Step 1: Download the GTFS feed for the transit network
+
+This will be a zipped file containing several text files. You can usually
+find the most recent version on the transit agency's website. Here are
+some links for the study areas folks are working with this year:
+
+* [Buffalo](https://www.nfta.com/metro/__googletransit/google_transit.zip)
+* [Honolulu](http://webapps.thebus.org/transitdata/Production/google_transit.zip)
+* [Jacksonville](https://schedules.jtafla.com/SchedulesGtfs/Download)
+* [Okalahoma City](https://embarkok.com/data/gtfs/google_transit.zip)
+* [Rochester](http://scheduledata.rgrta.com/google_transit.zip)
+
+Check the contents of the zipped folder. You may find that there's a folder within the 
+zipped folder, and that subfolder contains all the text files (I ran into this with 
+the Jacksonville example). If that's the case, extract those text files zip them
+into a new folder, so they're at the top level of a zipped folder.
+
+# Step 2: Import transit routes and schedules from GTFS
+
+Here is a video demonstrating how to import a GTFS feed into TransCAD.
+
+[Importing GTFS feed to TransCAD](https://harvard.zoom.us/rec/share/Ugw0Zsuu-E-f7DNHfFtF8gCQ5QEOG26aA8LsbcDUgSEtFn0cnGn9gTRE5p7HyiDM.lJR8ZDYX5QYyG4Fy?startTime=1675713801000){target="_blank"} (3:01)
+
+# Step 3: Calculate average route headways
+
+Here is a video demonstrating how to calculate average headways for the routes
+in your transit network.
+
+[Calculating average headways](https://harvard.zoom.us/rec/share/dZyMmKcWZCmgNZV7eya3Tmewxo7SDm1j-8_z5pVxC-I4ZosscVArGiuic_qeNASJ.nmhwFT9EALhGQEIS?startTime=1675714066000){target="_blank"} (3:22) 
+
+# Step 4: Add centroids and connectors to line layer
+
+Here is a video reviewing how to add centroids and centroid connectors to a line 
+layer.
+
+[Adding centroid connectors](https://harvard.zoom.us/rec/share/CuB1oADC_WH1zbTB0NAoJsVKzRMHne_LfePrSa4AKtseF0-U5XSu1yGkRYW7ntS_._CJd-WLji0lOBnut?startTime=1675714790000){target="_blank"} (3:38) 
+
+# Step 5: Tag stops to nodes
+
+To build the public transit network from your routes layer, you will need to identify
+which stops (associated with the the routes layer) are closest to which nodes (associated
+with the line layer). Here is a video demonstrating how to tag stops to nodes.
+
+[Tagging stops to nodes](https://harvard.zoom.us/rec/share/cepVQxl0Gks0GQLwPmVaRjiiPn578rL40lHcKMN4uZWavN2DMYZnQ2K_hU-f_CFV.qTIZkcgYLLSqUuW3?startTime=1675715297000){target="_blank"} (1:47) 
+
+# Step 6: Calculate link walk times and in-vehicle travel times
+
+You'll need to set values for each of three fields in the link file: 
+
+* In-vehicle travel time (IVTT) (the time it takes for a transit vehicle to traverse a link)
+* Walk time (the time it takes to walk along a link)
+* Walk mode (an ID indicating the mode used to access transit)
+
+Here is a video demonstrating how to set those values.
+
+[Specifying link travel times](https://harvard.zoom.us/rec/share/NS_cFGf4iZId6cIDHiXBgnzcfPyffoTmgzU1pjM0SgfKS7PrjHD9rjcfvV1EVxQ.39jFsnq2IExMEIZU?startTime=1675716021000){target="_blank"} (3:01) 
+
+# Step 7: Create a public transport network
+
+Now you are ready to create the network file. Here's a video that demonstrates how to do that.
+
+[Creating a transit network](https://harvard.zoom.us/rec/share/RGZ2Qa_YblSLK9XSYVSAyuzDS1l6CYdJLg-QqwA2oMdxZWuUlap18tUYaCt6Vc5P.udvmHhla4p5cY8bc?startTime=1675716251000){target="_blank"} (1:41) 
+
+# Step 8: Skim the public transport network
+
+And finally, you can skim the public transit network.
+
+[Skimming a transit network](https://harvard.zoom.us/rec/share/SmF30zovUkzikfceJpNN4_pk4DrBfNpGwNF9_g9AA8IAi5QnF6cNok53WrXIHJOi.RZH09Y3wlZ1Lp8Sf?startTime=1675716496000){target="_blank"} (6:26)
