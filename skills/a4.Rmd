@@ -84,3 +84,132 @@ Now you are ready to create the network file. Here's a video that demonstrates h
 And finally, you can skim the public transit network.
 
 [Skimming a transit network](https://harvard.zoom.us/rec/share/SmF30zovUkzikfceJpNN4_pk4DrBfNpGwNF9_g9AA8IAi5QnF6cNok53WrXIHJOi.RZH09Y3wlZ1Lp8Sf?startTime=1675716496000){target="_blank"} (6:26)
+
+# Visualization: Displaying transit routes in R
+
+You can use the `tidytransit` package to visualize the transit 
+network using R.
+
+```{r, message=FALSE, results='hide'}
+library(tidyverse)
+library(tidytransit)
+library(here)
+library(ggthemes)
+library(tigris)
+
+slo_tracts <- tracts(state = "CA", county = "San Luis Obispo")
+
+slo_rta_gtfs <- read_gtfs(
+  "http://slo.connexionz.net/rtt/public/resource/gtfs.zip")
+
+route_shapes <- shapes_as_sf(slo_rta_gtfs$shapes)
+
+ggplot() +
+  geom_sf(data = slo_tracts,
+          fill = "cornsilk",
+              color = "gray") +
+  geom_sf(data = route_shapes,
+          aes(color = shape_id)) +
+  theme_map() +
+  theme(legend.position = "none")
+```
+
+# Visualization: Importing Excel sheets to R
+
+You can also bring your transit skim matrix into R after exporting it from 
+TransCAD to an Excel workbook.
+
+Here is a video on how to export a matrix as an Excel workbook (with rows
+and columns labeled with census tract GEOIDs).
+
+[Labeling and exporting a matrix](https://harvard.zoom.us/rec/share/yHLbTXt2CMloCup692i_8sIcv1d-1_g_YpeezJXCN_95OpeRevyjp4zkR7fHWxil.Vcr2sXEmGec9RFuo?startTime=1675875186000){target="_blank"}(5:50)
+
+And then you can read the Excel workbook into R.
+
+```{r}
+library(readxl)
+
+IVTT <- here("Examples",
+             "San Luis Obispo",
+             "slo-rta-skims.xlsx") %>%
+  read_xlsx(sheet = "In-Vehicle Time")
+
+total_time <- here("Examples",
+             "San Luis Obispo",
+             "slo-rta-skims.xlsx") %>%
+  read_xlsx(sheet = "Total Time")
+
+transfers <- here("Examples",
+             "San Luis Obispo",
+             "slo-rta-skims.xlsx") %>%
+  read_xlsx(sheet = "Number of Transfers")
+```
+
+Each matrix is now a dataframe with 43 rows (the number of tracts with 
+transit access) and 44 columns (one for each tract, and one with the name of 
+the origin tract).
+
+# Visualization: Pivoting a skim matrix
+
+It might be more useful to have each origin-destination pair on a separate
+row, with columns representing the number of transfers, the total travel time, 
+and the in-vehicle travel time.
+
+```{r, warning=FALSE, message=FALSE}
+transfers_long <- transfers %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         n_transfers = value)
+
+IVTT_long <- IVTT %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         IVTT = value)
+
+
+total_time_long <- total_time %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         total_time = value)
+
+full_skim <- full_join(IVTT_long, transfers_long) %>%
+  full_join(total_time_long)
+```
+
+Here are the first few rows of the resulting dataframe:
+
+```{r}
+library(knitr)
+
+head(full_skim) %>%
+  kable()
+```
+
+# Visualization: Joining to census tracts
+
+Maybe I want to visualize the transit access from the downtown transit center 
+in San Luis Obispo, which is located in tract 06079011101. I can filter my skim
+dataframe to only include trips from that location.
+
+```{r, message=FALSE}
+from_downtown <- full_skim %>%
+  filter(from_GEOID == "06079011101") %>%
+  select(-from_GEOID) %>%
+  rename(GEOID = to_GEOID) 
+  
+from_dwntwn_tracts <- left_join(slo_tracts, from_downtown)
+
+ggplot(from_dwntwn_tracts) +
+  geom_sf(aes(fill = total_time)) +
+  geom_sf(data = route_shapes) +
+  scale_fill_viridis_c(name = 
+    "Total travel time\nby transit from\ndowntown transit center") +
+  theme_map()
+```
+
