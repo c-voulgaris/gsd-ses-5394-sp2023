@@ -85,6 +85,28 @@ And finally, you can skim the public transit network.
 
 [Skimming a transit network](https://harvard.zoom.us/rec/share/SmF30zovUkzikfceJpNN4_pk4DrBfNpGwNF9_g9AA8IAi5QnF6cNok53WrXIHJOi.RZH09Y3wlZ1Lp8Sf?startTime=1675716496000){target="_blank"} (6:26)
 
+One quick note that isn't covered in the video above: There are two 
+parameters you can set on the "other" tab of the Network Settings
+dialog (about 2:30 in the video above) that can make a big difference to
+to your total travel time and waiting time estimates. These are the 
+global value for the maximum initial wait time and the interarrival parameter.
+
+![](network settings.png)
+
+The interarrival parameter is set to 0.5 by default, and this means that
+passengers arrive randomly at transit stops, and their average wait
+time is half of the headway. This is a good assumption for frequent
+service where people just show up at a stop without checking a transit 
+schedule first. For infrequent service, it might be better to assume 
+that people do check the schedule and time their arrivals, rather than 
+showing up an hour early to catch a bus that comes every two hours. You 
+can account for this by setting a maximum wait time. 
+
+If you set a value of 15 here, that will mean that if headways are less 
+than 30 minutes, people will wait for half of the headway, but if 
+headways are more than 30 minutes, they won't wait longer than 15 
+minutes.
+
 # Visualization: Displaying transit routes in R
 
 You can use the `tidytransit` package to visualize the transit 
