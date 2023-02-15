@@ -271,8 +271,7 @@ ggplot(accessibility_summary) +
   theme_minimal()
 ```
 
-You'll notice that the location with the best car access also has the best
-transit access in this case.
+
 
 # Step 10: Visualize distribution of accessibility
 
