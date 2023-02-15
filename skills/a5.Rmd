@@ -1,0 +1,336 @@
+---
+title: "Skills for Analysis Assignment 5"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents an approach to calculating accessibility for Analysis 
+Assignment 5, using either a cumulative opportunity measure or a gravity-
+based measure. 
+
+The examples here use the following packages:
+
+```{r, message=FALSE, results='hide'}
+library(readxl)
+library(here)
+library(tidyverse)
+library(knitr)
+library(sf)
+library(ggthemes)
+library(ggspatial)
+```
+
+
+# Step 1: Importing skims to R
+
+Once you've finished your transit skims and road skims in TransCAD, you
+can open them in R and combine them into a single dataframe, with columns
+representing origins and destinations, and a column for each matrix.
+
+First, you can read in the matices from their Excel files.
+
+```{r, warning=FALSE, message=FALSE}
+IVTT <- here("Examples",
+             "rochester",
+             "transit-skim.xlsx") %>%
+  read_xlsx(sheet = "In-Vehicle Time")
+
+transit_time <- here("Examples",
+             "rochester",
+             "transit-skim.xlsx") %>%
+  read_xlsx(sheet = "Total Time")
+
+transfers <- here("Examples",
+             "rochester",
+             "transit-skim.xlsx") %>%
+  read_xlsx(sheet = "Number of Transfers")
+
+car_time <- here("Examples",
+             "rochester",
+             "road-skim.xlsx") %>%
+  read_xlsx(sheet = "TravelTime")
+```
+
+Then you can pivot each matrix to have a column indicating the origin and 
+a column indicating the destination.
+
+```{r, warning=FALSE, message=FALSE}
+transfers_long <- transfers %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  # Careful with leading zeros if your state is early in the alphabet
+  mutate(GEOID = as.character(GEOID)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         n_transfers = value)
+
+IVTT_long <- IVTT %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  mutate(GEOID = as.character(GEOID)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         IVTT = value)
+
+transit_time_long <- transit_time %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  mutate(GEOID = as.character(GEOID)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         total_time = value)
+
+car_long <- car_time %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  mutate(GEOID = as.character(GEOID)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         car_time = value)
+
+full_skim <- full_join(IVTT_long, transfers_long) %>%
+  full_join(transit_time_long) %>%
+  full_join(car_long) %>%
+  filter(from_GEOID != to_GEOID)
+```
+
+Here are the first few rows of the resulting dataframe:
+
+```{r}
+head(full_skim) %>%
+  kable()
+```
+
+
+# Step 2 (Optional): Calculate perceived travel time
+
+In general, people are more bothered by out-of-vehicle time than in-vehicle
+time, and models commonly weight out-of-vehicle time to be two- to three-times
+as bad as in-vehicle time.
+
+You can add an adjustment factor like this if you want to.
+
+```{r}
+full_skim <- full_skim %>%
+  mutate(OVTT = total_time - IVTT) %>%
+  mutate(percieved_time = (IVTT + 2.5 * OVTT))
+```
+
+
+# Step 2: Add employment data
+
+We'll focus this analysis on access to jobs (remind me to revisit this when we've
+done the trip generation step). Load the data you assembled for A02.
+
+```{r, message=FALSE, results='hide'}
+tracts <- here("Examples",
+                   "rochester",
+                   "rochester_tracts.geojson") %>%
+  st_read()
+
+employment_data <- tracts %>%
+  st_drop_geometry() %>%
+  select(GEOID, total_emp) %>%
+  rename(to_GEOID = GEOID)
+```
+
+Now I can add the number of jobs at each destination to my skim dataframe.
+
+```{r}
+accessibility_df <- full_skim %>%
+  left_join(employment_data)
+```
+
+# Step 3: Define some decay functions
+
+Let's define some decay functions as functions (good practice for 
+writing functions in R).
+
+You don't need to use all of these. Choose one. Here is a tool you can
+use to visualize each of these functions: 
+
+https://urban-stack.shinyapps.io/access-decay/
+
+Does it matter which decay function you choose? [Santana Palacios and El-geneidy 2022](https://findingspress.org/article/32444-cumulative-versus-gravity-based-accessibility-measures-which-one-to-use){target="_blank"} would argue that it does not.
+
+```{r}
+step_function <- function(travel_time, cutoff) {
+   ifelse(travel_time > cutoff, 0, 1) 
+}
+
+exponential_function <- function(travel_time, halflife) {
+  lambda = log(2) / halflife
+  exp(travel_time * -1 * lambda)
+}
+
+exponential_function <- function(travel_time, halflife) {
+  lambda = log(2) / halflife
+  exp(travel_time * -1 * lambda)
+}  
+
+logistic_function <- function(travel_time, inflection, stdev) {
+  1/(1+exp((travel_time - inflection) / stdev))
+}
+
+linear_function <-  function(travel_time, midpoint, width) {
+  case_when(travel_time <= midpoint - (width / 2) ~ 1,
+            travel_time >= midpoint + (width / 2) ~ 0,
+            TRUE ~ 0.5 - ((travel_time - midpoint) / width))
+}   
+```
+
+# Step 4: Weight jobs for each origin-destination pair
+
+You can use one of the decay functions you've defined to calculate a
+weight for the jobs at in each zone. You'll need to choose parameters
+for the decay function you choose.
+
+```{r}
+accessibility_df <- accessibility_df %>%
+  mutate(weight_car = logistic_function(car_time, 30, 10),
+         weight_transit = logistic_function(percieved_time, 30, 10))
+```
+
+Then you can multiply the number of jobs by its weight.
+
+```{r}
+accessibility_df <- accessibility_df %>%
+  mutate(transit_jobs = total_emp * weight_transit,
+         car_jobs = total_emp * weight_car)
+```
+
+# Step 5: Aggregate to origins
+
+If we are looking at access _to_ destinations (rather than access _from_
+origins), we'll aggregate by the trip origin.
+
+```{r}
+accessibility_summary <- accessibility_df %>%
+  group_by(from_GEOID) %>%
+  summarise(car_access = sum(car_jobs, na.rm = TRUE),
+            transit_access = sum(transit_jobs, na.rm = TRUE))
+```
+
+# Step 6 (Optional): Combine absolute transit and car access
+
+You could add car access to transit access to get a total accessibility
+value. If you add them together directly, you're weighting car 
+access and transit access equally. You could also calculate a weighted 
+average. For example, if you think transit access is three times as 
+important as car access, you could multiply the transit access value by
+three, and then add them together.
+
+```{r}
+accessibility_summary <- accessibility_summary %>%
+  mutate(total_access_1 = car_access + 3 * transit_access)
+```
+
+# Step 7 (Optional): Create relative access metric
+
+If you are using any decay function other than the step function, the 
+absolute meaning of the accessibility metrics might not be very 
+interpretable, so you might choose to calculate relative accessibility,
+where the maximum access by a given mode is assigned a value of 100, and 
+all other values are scaled proportionately.
+
+```{r}
+accessibility_summary <- accessibility_summary %>%
+  mutate(car_index = 100*car_access/max(car_access),
+         transit_index = 100*transit_access/max(transit_access))
+```
+
+# Step 8 (Optional): Combine relative access metrics
+
+If you combine the relative access metrics, then will have the effect
+of weighting transit access quite a bit more heavily than car access 
+(compared to if you equally weighted absolute access).
+
+You could add them together or average them.
+
+# Step 9: Compare transit access to car access
+
+You could use a scatter plot to compare car access to transit access.
+
+```{r}
+ggplot(accessibility_summary) +
+  geom_point(aes(x = car_index,
+                 y = transit_index),
+             alpha = 0.5,
+             color = "blue",
+             shape = "o") +
+  scale_x_continuous(name = "Car accessibility index") +
+  scale_y_continuous(name = "Transit accessibility index") +
+  theme_minimal()
+```
+
+You'll notice that the location with the best car access also has the best
+transit access in this case.
+
+# Step 10: Visualize distribution of accessibility
+
+You can create a histogram to illustrate the distribution of accessibility
+values for relative and/or absolute measures for cars and/or transit.
+
+```{r}
+ggplot(accessibility_summary) +
+  geom_histogram(aes(x = car_index),
+                 bins = 30,
+                 color = "blue",
+                 fill = "lightblue") +
+  scale_x_continuous(name = "Car accessibility index") +
+  scale_y_continuous(name = "Number of census tracts") +
+  theme_minimal()
+```
+
+# Step 10: Visualize spatial distribution of accessibility
+
+You can create a chloropleth map to illustrate the spatial distribution of
+accessibility values for relative and/or absolute measures for cars and/or
+transit.
+
+```{r, message=FALSE, warning=FALSE}
+accessibility_summary <- accessibility_summary %>%
+  rename(GEOID = from_GEOID)
+
+tracts <- tracts %>%
+  left_join(accessibility_summary)
+
+ggplot(tracts) +
+  annotation_map_tile(type = "stamenbw",
+                      zoomin = 0,
+                      progress = "none") +
+  geom_sf(aes(fill = transit_index),
+          color = NA,
+          alpha = 0.6) +
+  scale_fill_viridis_c(name = "Transit accessibility",
+                       trans = "log",
+                       breaks = c(0.000001,100),
+                       labels = c("Low",
+                                  "High"),
+                       option = "A") +
+  theme_map()
+```
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(tracts) +
+    annotation_map_tile(type = "stamenbw",
+                      zoomin = 0,
+                      progress = "none") +
+  geom_sf(aes(fill = car_index),
+          color = NA,
+          alpha = 0.6) +
+  scale_fill_viridis_c(name = "Car accessibility",
+                       breaks = c(5,100),
+                       labels = c("Low",
+                                  "High"),
+                       option = "A") +
+  theme_map()
+```
