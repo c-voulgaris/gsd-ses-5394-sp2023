@@ -16,6 +16,9 @@ The followings skills will be useful for Analysis Assignment 2. They are listed 
 
 *Note: In general, you should load all your libraries at the beginning of your script or markdown file. In these examples, I'm loading libraries at the top of each code chunk to make it more clear which methods use which packages.*
 
+* **Aggregate 2010 census blocks to 2020 census tracts:** The most 
+recent ACS data is for 2020 census tracts, but the most recent LEHD
+data is for 2010 census blocks. Here is an approach to reconciling them.
 * **Apply a ggplot theme:** You have a lot of flexibility in designing your ggplot charts and maps, but some pre-defined themes can save you some time on that.
 * **Collapse data:** This is useful if you want to collapse block-level data to the tract level, or tract-level data to the region level.
 * **Create a chloropleth map:** A static chloropleth map is a useful way to display variation across space on a figure you want to include in report.
@@ -33,6 +36,84 @@ The followings skills will be useful for Analysis Assignment 2. They are listed 
 * **Write data to a file:** When you have all the data how you want it, you should save it so you can use it for subsequent assignments. 
 * **Write figures to a file:** Creating maps and charts in RMarkdown is great, but you'll eventually want to save them as files you can include in a report or presentation.
 
+# Aggregate 2010 census blocks to 2020 tracts
+
+```{r, include=FALSE}
+library(tidyverse)
+library(sf)
+library(here)
+
+lehd_blocks <- read_csv('https://lehd.ces.census.gov/data/lodes/LODES7/hi/wac/hi_wac_S000_JT00_2019.csv.gz', show_col_types = FALSE) %>%
+  rename(total_emp = C000) %>%
+  mutate(basic_emp = CNS01+CNS02+CNS03+CNS04+CNS05+CNS06+CNS08+CNS09) %>%
+  rename(retail_emp = CNS07) %>%
+  mutate(service_emp = total_emp - basic_emp - retail_emp) %>%
+  select(w_geocode, total_emp, basic_emp, retail_emp, service_emp)
+
+tracts <- here("Examples",
+               "Honolulu",
+               "hi_zone_data.geojson") %>%
+  st_read()
+```
+
+The "Collapse" data topic presents an approach to aggregating block-level
+data to the tract level, but you may run into a problem if you're using
+LEHD data based on 2010 census geographies and combining it with 2021
+American Community Survey Data that uses 2020 census geographies. 
+
+Here is an approach to aggregating 2010 census blocks to 2020 census tracts.
+
+In this example I have a dataframe called `lehd_blocks` with employment
+data for each census block in Hawaii (2010 boundaries) and a set of 
+polygons called `tracts` with the census tracts in my study area
+(2020 boundaries).
+
+First, I need to get the centroids of the 2010 census blocks.
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+library(tigris)
+
+block_centroids <- blocks(year = 2010,
+                          state = "HI") %>%
+  st_centroid()
+```
+
+Now, I can join the LEHD data to an the block centroids.
+
+```{r}
+lehd_blocks <- lehd_blocks %>%
+  mutate(GEOID10 = as.character(w_geocode)) 
+
+lehd_points <- block_centroids %>%
+  left_join(lehd_blocks) %>%
+  select(GEOID10, total_emp, basic_emp, retail_emp, service_emp) %>%
+  filter(!is.na(total_emp))
+```
+
+Now the LEHD data are associate with locations, I can join them to 
+the census tract boundaries. Once I've done that, I can drop the 
+geometry column.
+
+```{r}
+tract_boundaries <- tracts %>%
+  select(GEOID)
+
+tract_employment <- st_join(tract_boundaries, lehd_points) %>%
+  st_drop_geometry()
+```
+
+Now you have a column identifying the 2020 census tract each 2010 census 
+block is in. So you can aggregate to the tract level from there.
+
+```{r}
+tract_employment <- tract_employment %>%
+  group_by(GEOID) %>%
+  summarise(total_emp = sum(total_emp),
+            basic_emp = sum(basic_emp),
+            retail_emp = sum(retail_emp),
+            service_emp = sum(service_emp))
+```
+
 # Apply a ggplot theme
 
 You have a lot of flexibility in designing your ggplot charts and maps, but some pre-defined themes can save you some time on that.
@@ -42,7 +123,7 @@ library(tidyverse)
 library(here)
 
 zones <- here("Examples",
-              "data",
+              "Honolulu",
               "hi_zone_data.csv") %>%
   read_csv() %>%
   mutate(pct_no_veh = no_vehE / total_hhsE)
@@ -97,7 +178,7 @@ For maps, `theme_map()` can be a good choice. If you've [created a chloropleth m
 library(sf)
 
 census <- st_read(here("Examples",
-                       "data",
+                       "Honolulu",
                        "hi_zone_data.geojson")) %>%
   mutate(avg_hh_size = (hh_1personE +
            2 * hh_2personE +
@@ -128,18 +209,9 @@ hh_size_map +
 
 This is useful if you want to collapse block-level data to the tract level. So for example, you might use it if you just [loaded the LEHD data](https://gsd-ses-5394-sp2023.github.io/skills/a2.html#download-employment-data).
 
-```{r, include=FALSE}
-lehd_blocks <- read_csv('https://lehd.ces.census.gov/data/lodes/LODES7/hi/wac/hi_wac_S000_JT00_2019.csv.gz', show_col_types = FALSE) %>%
-  rename(total_emp = C000) %>%
-  mutate(basic_emp = CNS01+CNS02+CNS03+CNS04+CNS05+CNS06+CNS08+CNS09) %>%
-  rename(retail_emp = CNS07) %>%
-  mutate(service_emp = total_emp - basic_emp - retail_emp) %>%
-  select(w_geocode, total_emp, basic_emp, retail_emp, service_emp)
-```
-
 In LEHD data, the GEOID is in a variable called w_geocode, and it's stored as a number, so we'll convert it to a character. The first 11 digits of census block's GEOID indicate the census tract, so we'll use that to create a variable indicating the census tract, and we'll name *that* GEOID. Then we'll drop the `w_geocode` column (by putting a negative sign before its name in the `select()` function). Then we'll use `group_by()` and `summarize()` to collapse the data to the tract level. 
 
-```{r}
+```{r, eval=FALSE}
 library(tidyverse)
 
 lehd_tracts <- lehd_blocks %>%
@@ -616,8 +688,6 @@ honolulu_areas <- tracts(state = "HI",
   select(GEOID, ALAND) %>%
   st_drop_geometry()
 ```
-
-
 # Download employment data
 
 The Longitudinal Employer-Household Dynamica (LEHD) dataset is a great source of census-block level employment data by industry.
@@ -679,7 +749,7 @@ If you have employment data in one dataframe (see the "Download employment data"
 
 In these examples, I know my population data only includes tracts in my study area because I filtered to to my study area boundary. My employment data is for the whole state. I'll do a left join, with the population data on the left (i.e. listed first), which wil drop all the rows of the employment data that aren't include in my population data.
 
-```{r, results='hide'}
+```{r, eval=FALSE}
 zones <- left_join(census, lehd_tracts)
 ```
 
