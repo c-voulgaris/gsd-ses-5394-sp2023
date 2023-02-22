@@ -1,0 +1,275 @@
+---
+title: "Skills for Analysis Assignment 6"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents an approach to estimating a trip production model based on data from the National Household Travel Survey. 
+
+The examples here use the following packages:
+
+```{r, message=FALSE, results='hide'}
+library(here)
+library(tidyverse)
+library(downloader)
+```
+
+# Download data from the National Household Travel Survey
+
+You can download the full 2017 NHTS datasets using the code
+below, or you can just navigate your browser to the url, 
+download the zipped file from there, and then extract the files
+to the directory where you want to save them
+(that would probably be faster).
+
+```{r, eval=FALSE}
+url <- "https://nhts.ornl.gov/assets/2016/download/csv.zip"
+nhts_zipped <- here("nhts.zip")
+nhts_dir <- here("nhts")
+
+download(url, nhts_zipped, mode="wb") 
+unzip(nhts_zipped, exdir = nhts_dir)
+```
+
+The extracted directory will have the following files:
+
+* Citation.docx
+* hhpub.csv
+* perpub.csv
+* trippub.csv
+* vehpub.csv
+
+# Load trips table and filter to study area
+
+You will likely be primarily working with the trips file
+(trippub.csv). You will want to load this to R and filter to 
+only include trips by households in your study area.
+
+Use the interactive codebook browser to find the code for your
+study area (the variable will be HH_CBSA).
+
+```{r, eval=FALSE}
+okc_trips <- here("nhts",
+                  "trippub.csv") %>%
+  read_csv() %>%
+  filter(HH_CBSA == "36420")
+```
+
+Core-based statistical areas with populations less than one 
+million will not be specified in the public dataset, and 
+Honolulu falls just below this threshold. However, it is the 
+only MSA in Hawaii with a population greater than 500,000, so you can filter for it based on state and MSA size category.
+
+```{r, message=FALSE}
+hnlulu_trips <- here("nhts",
+                     "trippub.csv") %>%
+  read_csv() %>%
+  filter(HHSTATE == "HI" &
+           MSASIZE == "03")
+```
+
+# Filter out non-motorized trips
+
+If your model does not include walk and bike trips, you should
+filter these out.
+
+```{r}
+hnlulu_trips <- hnlulu_trips %>%
+  filter(TRPTRANS != "01" & # Walk
+           TRPTRANS != "02" & # Bike
+           TRPTRANS != "19") # Airplane
+```
+
+
+# Count trips by trip purpose
+
+Your model should include the following trip purposes:
+
+* Home-based work (HBW)
+* Home-based other (HBO)
+* Non-home-based (NHB)
+
+Classify trips into one of these three categories.
+
+```{r}
+hnlulu_trips <- hnlulu_trips %>%
+  mutate(home_based = (WHYFROM == "01" |
+                         WHYFROM == "02" |
+                         WHYTO == "01" |
+                         WHYTO == "02"),
+         work = (WHYFROM == "03" |
+           WHYTO == "03")) %>%
+  mutate(purpose = case_when(home_based & work ~ "HBW",
+                             home_based ~ "HBO",
+                             TRUE ~ "NHB"))
+```
+
+You can quickly check how many of the total trips in your
+study area fall into each category.
+
+```{r}
+table(hnlulu_trips$purpose)
+```
+
+In this example, we see that just over half of all trips are
+in the "home-based other" category. Now we want to see how
+many trips of each type each household makes.
+
+```{r}
+hh_trip_counts <- hnlulu_trips %>%
+  group_by(HOUSEID) %>%
+  summarise(HBO_trips = sum(purpose == "HBO"),
+            HBW_trips = sum(purpose == "HBW"),
+            NHB_trips = sum(purpose == "NHB"))
+```
+
+# Load household data
+
+The trips file includes most of the household-level data you'd
+need, but it won't include households that made no survey-day
+trips, so it's better to get this by joining your trip counts
+to the household file.
+
+First you can load the household data and filter it the same way
+you did for the trips. Then you can join the trip counts. 
+Households with no trips won't have been in the trips file, so
+you can replace the resulting NA values with zeros.
+
+```{r, message=FALSE}
+hnlulu_hhs <- here("nhts",
+                     "hhpub.csv") %>%
+  read_csv() %>%
+  filter(HHSTATE == "HI" &
+           MSASIZE == "03") %>%
+  left_join(hh_trip_counts) %>%
+  replace_na(list(HBO_trips = 0,
+                  HBW_trips = 0,
+                  NHB_trips = 0))
+```
+
+# Select (and create) variables
+
+Spend some time browsing through the codebook and you'll find 
+a lot of interesting variables that might be interesting 
+predictors of trip generation, or travel behvior more generally.
+
+You'll need to limit yourself to variables that have zone-level
+analogs you can get from the census.
+
+Let's say the data you've collected about each zone includes:
+
+* Median income
+* Number of zero-vehicle households
+* Number of one-vehicle households
+* Number of households with two or more vehicles
+* Number of households with children
+
+You would want to estimate a model that predicts the number of
+household trip productions for each trip purpose based on 
+
+* Household income
+* The presence of a household vehicle
+* The presence of household children
+
+The NHTS presents income in one of eleven categories. I'll use 
+the mid-point of each category to generate a continuous variable
+indicating the household income in thousands. I'll have to make 
+a guess for the midpoint of the top category ($200,000 or more).
+I'm just going to use $300,000 - but this is a totally arbitrary
+decision.
+
+```{r}
+hnlulu_hhs <- hnlulu_hhs %>%
+  mutate(inc_k = case_when(HHFAMINC == "01" ~ 5,
+                           HHFAMINC == "02" ~ 12.5,
+                           HHFAMINC == "03" ~ 17.5,
+                           HHFAMINC == "04" ~ 20,
+                           HHFAMINC == "05" ~ 37.5,
+                           HHFAMINC == "06" ~ 62.5,
+                           HHFAMINC == "07" ~ 82.5,
+                           HHFAMINC == "08" ~ 112.5,
+                           HHFAMINC == "09" ~ 132.5,
+                           HHFAMINC == "10" ~ 175,
+                           HHFAMINC == "11" ~ 300,
+                           TRUE ~ 99)) %>%
+  mutate(inc_k = na_if(inc_k, 99))
+```
+
+And I'll create a categorical variable for vehicle ownership.
+
+```{r}
+hnlulu_hhs <- hnlulu_hhs %>%
+  mutate(veh_cat = case_when(HHVEHCNT == 0 ~ "zero",
+                             HHVEHCNT == 1 ~ "one",
+                             TRUE ~ "two-plus"))
+```
+
+And a binary variable for whether there are children in the
+household.
+
+```{r}
+hnlulu_hhs <- hnlulu_hhs %>%
+  mutate(any_kids = LIF_CYC != "01" &
+                    LIF_CYC != "02" &
+                    LIF_CYC != "09" &
+                    LIF_CYC != "10")
+```
+
+# Estimate a linear regression model
+
+Now you can estimate a linear regression model for each trip 
+purpose. I'm log-transforming income because I expect that
+a percent. I'm using a base-two log so that I can interpret 
+the coefficient as the effect of doubling income.
+
+```{r}
+hbo_trip_prod <- lm(HBO_trips ~ log2(inc_k) +
+                                veh_cat +
+                                any_kids,
+                    data = hnlulu_hhs)
+```
+
+And here are the model results:
+
+```{r}
+summary(hbo_trip_prod)
+```
+
+The intercept is 1.18. This is the predicted number
+of daily trips for a household with an annual income of $1,000
+per year (so the base-two logarithm of the income, in thousands,
+is zero), with one vehicle and no children.
+
+A doubling of income is associated with 0.17 additional 
+"home-based other" trips per day, although this effect is not
+significant at a 95-percent (or even a 65-percent) confidence
+level. 
+
+Households with two or more vehicles make 1.3 more trips per day
+than households with one vehicle. Households with no vehicles 
+make fewer trips per day than those with one vehicle, but this 
+difference is not significant at even an 80 percent confidence
+level.
+
+Households with children make, on average, 2.5 more daily trips
+than those without children, holding income and vehicle access
+constant.
+
+What would be the predicted number of daily home-based other 
+trips for a household with an annual income of $32,000 per 
+year, two vehicles, and children living at home?
+
+32 is $2^5$, so, this would be:
+
+$1.18 + (5\times0.17) + 1.34 + 2.5$ or 5.9 trips.
+
+This is the number of _trips produced_ by that household, or 
+number of daily trip productions.
