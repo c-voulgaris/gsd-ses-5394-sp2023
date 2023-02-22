@@ -12,7 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Overview
 
-This page presents an approach to estimating a trip production model based on data from the National Household Travel Survey. 
+This page presents an approach to estimating a trip production model based on data from the National Household Travel Survey, applying that model to estimate the number of trips produced by each zone, applying a trip attraction model to estimate the number of trips attracted by each zone, 
+and balancing productions and attractions.
 
 The examples here use the following packages:
 
@@ -20,6 +21,8 @@ The examples here use the following packages:
 library(here)
 library(tidyverse)
 library(downloader)
+library(tidycensus)
+library(sf)
 ```
 
 # Download data from the National Household Travel Survey
@@ -273,3 +276,172 @@ $1.18 + (5\times0.17) + 1.34 + 2.5$ or 5.9 trips.
 
 This is the number of _trips produced_ by that household, or 
 number of daily trip productions.
+
+# Load zonal household data
+
+I'll start by loading a dataset with the following variables:
+
+* Number of households
+* Number of households with a child present
+* Number of households with zero vehicles
+* Number of households with one vehicle
+* Median household income
+
+You may already have a dataset like this assembled from the second
+analysis assignment, but I'll load it here directly from tidycensus.
+
+Median income isn't reported for tracts with small sample sizes - so I'm missing 
+that value for about ten tracts. I'll go ahead and replace those missing values 
+with the study area median.
+
+```{r, message=FALSE}
+vars <- c(tot_hhs = "B11005_001",
+          hhs_with_kids = "B11005_002",
+          hhs_0_veh = "B08201_002",
+          hhs_1_veh = "B08201_003",
+          med_inc = "B19113_001")
+
+median_study_area_income <- get_acs(year = 2019,
+                                    geography = "cbsa",
+                                    variables = "B19113_001") %>%
+  filter(NAME == "Oklahoma City, OK Metro Area")
+
+# Load TAZs
+okc_zones <- get_acs(year = 2019, 
+                     state = "OK",
+                     county = c("Canadian",
+                                    "cleveland",
+                                    "Grady",
+                                    "Lincoln",
+                                    "Logan",
+                                    "McClain",
+                                    "Oklahoma"),
+                     variables = vars,
+                     geography = "tract",
+                     geometry = TRUE,
+                     output = "wide") %>%
+  replace_na(replace = list(med_incE = median_study_area_income$estimate[1]))
+```
+
+# Calculate trip productions from trip production models
+
+Let's say I previously estimated this trip production model for 
+home-based other trips:
+
+![](prod-model.png)
+
+I can use that to estimate the total number of trip 
+productions per household for each zone.
+
+```{r}
+okc_zones <- okc_zones %>%
+  mutate(hhs_2plus_veh = tot_hhsE - hhs_0_vehE - hhs_1_vehE) %>%
+  mutate(hbo_prod_per_hh = 0.7199 + 
+                           0.2121 * log2(med_incE) + 
+                           1.4369 * ((hhs_2plus_veh)/tot_hhsE) -
+                           0.2263 * (hhs_0_vehE/tot_hhsE) +
+                           1.7883 * (hhs_with_kidsE/tot_hhsE))
+```
+
+And then I can multiply that by the number of households in each zone.
+
+```{r}
+okc_zones <- okc_zones %>%
+  mutate(hbo_trip_prod = tot_hhsE * hbo_prod_per_hh)
+```
+
+# Load employment data
+
+Now I'll load the employment data and join it to my household data 
+(again, you will have already done this).
+
+```{r}
+lehd_blocks <- read_csv('https://lehd.ces.census.gov/data/lodes/LODES7/ok/wac/ok_wac_S000_JT00_2019.csv.gz', 
+                        show_col_types = FALSE) %>%
+  rename(total_emp = C000) %>%
+  mutate(basic_emp = CNS01+CNS02+CNS03+CNS04+CNS05+CNS06+CNS08+CNS09) %>%
+  rename(retail_emp = CNS07) %>%
+  mutate(service_emp = total_emp - basic_emp - retail_emp) %>%
+  select(w_geocode, total_emp, basic_emp, retail_emp, service_emp)
+
+lehd_tracts <- lehd_blocks %>%
+  mutate(w_geocode = as.character(w_geocode)) %>%
+  mutate(GEOID = substr(w_geocode, 1, 11)) %>%
+  select(-w_geocode) %>%
+  group_by(GEOID) %>%
+  summarize(across(everything(), ~sum(.)))
+
+okc_zones <- okc_zones %>%
+  left_join(lehd_tracts)
+```
+
+# Calculate trip attractions from trip attraction models
+
+You don't have great data for estimating a trip attraction model (this isn't 
+unusual), so we're just going to use parameters from 
+[NCHRP 716](https://www.trb.org/Publications/Blurbs/167055.aspx){target="_blank"}. 
+
+![](NCHRP_716_4-4.png)
+
+Model 3 for motorized person trips is appropriate to the data we have for
+home-based non-work trips (since we don't have school enrollment data).
+
+```{r}
+okc_zones <- okc_zones %>%
+  mutate(hbo_trip_attr = 1.0 * tot_hhsE +
+                         0.3 * basic_emp +
+                         5.9 * retail_emp +
+                         2.3 * service_emp)
+```
+
+# Balance productions and attractions
+
+How many total trip productions did I estimate for the entire 
+study area?
+
+```{r}
+sum(okc_zones$hbo_trip_prod)
+```
+
+And how many total trip attractions did I estimate?
+
+```{r}
+sum(okc_zones$hbo_trip_attr)
+```
+
+This isn't terribly surprising, but it is a problem. Every trip needs
+to have one production and one attraction, so the number of productions
+should be equal to the number of attractions. I'll need to balance
+productions and attractions.
+
+In general, my trip production model will be based on better, more recent
+data than my trip attraction model, so one sensible approach would be to 
+take the total number of trip productions as "true" and scale the trip 
+attractions up to that number.
+
+```{r}
+okc_zones <- okc_zones %>%
+  mutate(hbo_bal_attr = hbo_trip_attr * 
+           sum(hbo_trip_prod) / sum(hbo_trip_attr))
+```
+
+Now I can confirm that the adjusted trip attractions do sum to the
+total number of trip productions.
+
+```{r}
+sum(okc_zones$hbo_bal_attr)
+```
+
+# Save your results
+
+You'll need to open a layer of zones with balanced productions and
+attractions in TransCAD for the trip distribution step, so you should 
+export that result as a geojson file.
+
+```{r, eval=FALSE}
+okc_zones %>%
+  select(GEOID, hbo_trip_prod, hbo_trip_attr) %>%
+  st_write(here("Examples",
+                "OKC",
+                "trip-gen.geojson"))
+```
