@@ -56,7 +56,9 @@ You will likely be primarily working with the trips file
 (trippub.csv). You will want to load this to R and filter to 
 only include trips by households in your study area.
 
-Use the interactive codebook browser to find the code for your
+Use the 
+[interactive codebook browser](https://nhts.ornl.gov/tables09/CodebookBrowser.aspx){target="_blank"} 
+to find the code for your
 study area (the variable will be HH_CBSA).
 
 ```{r, eval=FALSE}
@@ -294,7 +296,7 @@ Median income isn't reported for tracts with small sample sizes - so I'm missing
 that value for about ten tracts. I'll go ahead and replace those missing values 
 with the study area median.
 
-```{r, message=FALSE}
+```{r, message=FALSE, results='hide'}
 vars <- c(tot_hhs = "B11005_001",
           hhs_with_kids = "B11005_002",
           hhs_0_veh = "B08201_002",
