@@ -1,0 +1,208 @@
+---
+title: "Skills for Analysis Assignment 7 (all R)"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents methods to applying a gravity model to 
+generate a production-attraction matrix and some methods for 
+visualizing production-attraction flows.
+
+This tutorial demonstrates relies primarily on TransCAD to apply
+the gravity model.
+You can find [an alternative version that relies on R for all analysis here](https://c-voulgaris.github.io/gsd-ses-5394-sp2023/skills/a7-r.html){target="_blank"}.
+
+I will be using R for some initial set-up, and I'll be using the following
+packages: 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(here)
+library(srvyr)
+library(knitr)
+library(sf)
+```
+
+
+# Calculate average travel time by trip purpose
+
+You'll want to check your results by comparing the average travel 
+time for each trip purpose to the average travel time you observe
+from your survey data.
+
+I'll get the average travel time by trip purpose from the NHTS. First I download the data (if you have it saved on your computer from a previous assignment, you can also just load it from wherever you saved it before).
+
+Then I filter to include only the households in my study area and to 
+only include car trips (since I'm using a car skim for my travel times). 
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+trips <- here("nhts",
+     "trippub.csv") %>%
+  read_csv(show_col_types = FALSE) %>%
+  filter(HH_CBSA == "15380") %>%
+  filter(TRPTRANS == "03" | # Car
+           TRPTRANS == "04" | # SUV
+           TRPTRANS == "05" | # Van
+           TRPTRANS == "06") # pickup truck 
+```
+
+Then I create a variable that specifies the trip purpose (as you did for Assignment 6).
+
+```{r}
+trips <- trips %>%
+  mutate(home_based = case_when(WHYTO == "01" ~ TRUE,
+                                WHYTO == "02" ~ TRUE,
+                                WHYFROM == "01" ~ TRUE,
+                                WHYFROM == "02" ~ TRUE,
+                                TRUE ~ FALSE)) %>%
+  mutate(work = ifelse(WHYTO == "03" | WHYFROM == "03", TRUE, FALSE)) %>%
+  mutate(purpose = case_when(home_based & work ~ "HBW",
+                            home_based ~ "HBO",
+                            TRUE ~ "NHB"))
+```
+
+
+Then I create a survey object and calculate the average travel time by trip purpose.
+
+```{r, message=FALSE}
+trips_svy <- trips %>%
+  filter(TRVLCMIN > 0) %>%
+  as_survey(weights = WTTRDFIN)
+
+ttime_by_purpose <- trips_svy %>%
+  group_by(purpose) %>%
+  summarise(avg_time = survey_mean(TRVLCMIN))
+
+kable(ttime_by_purpose)
+```
+
+# Prepare production-attraction table
+
+When you finished Assignment 6, you should have saved a table with 
+the estimated number of productions and attractions in each zone.
+
+I'll open a table here that should look something like what you ended
+up with.
+
+```{r, message=FALSE, results='hide', warning=FALSE}
+trip_gen <- here("Examples",
+                 "rochester",
+                 "trip-gen.geojson") %>%
+  st_read() 
+
+```
+
+Here are the first few rows of that table
+
+```{r}
+kable(head(trip_gen))
+```
+
+To open this table correctly in TransCAD, you'll need to have a column with
+a numeric ID column. I'll use the last 9 digits of the GEOID (if I 
+use the full GEOID, the number will be too big).
+
+For subsequent visualization, you might want to also create a column that
+indicates which county each tract is in (with a numeric ID number). I'll make those additions and then
+save a new geojson file.
+
+```{r, eval=FALSE}
+trip_gen %>%
+  mutate(ID = as.integer(substr(GEOID, 3, 11))) %>%
+  mutate(county_ID = as.numeric(substr(GEOID, 1, 5))) %>%
+  mutate(county = case_when(county_ID == "36051" ~"Livingston",
+                            county_ID == "36055" ~ "Monroe",
+                            county_ID == "36069" ~ "Ontario",
+                            county_ID == "36073" ~ "Orleans",
+                            county_ID == "36117" ~ "Wayne",
+                            TRUE ~ "Yates")) %>%
+  st_write(here("Examples",
+                "rochester",
+                "trip-gen_with_ids.geojson"))
+```
+
+# Apply a gravity model in TransCAD
+
+When you apply a gravity model in TransCAD, you will need to select
+one of three types of deterrence function:
+
+* Exponential function
+* Inverse (power) function
+* Gamma function
+
+## Exponential function 
+
+The exponential function is:
+
+$F_{ijp} = e^{-ct_{ij}}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j. 
+
+If you choose a exponential function in TransCAD, you will need to select
+a value for c. 
+
+## Inverse (power) function
+
+The inverse (or power) function is:
+
+$F_{ijp} = t_{ij}^{-b}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j, and a common value for _b_ would be 2 (for consistency with the Law of Gravity, which is the inspiration for the gravity model), but you can 
+select any value. 
+
+## Gamma function
+
+The Gamma function is also called the combined function, since it's just the product of the power function and the exponential function. It can be written as:
+
+$F_{ijp} = (a)t_{ij}^{b}e^{ct_{ij}}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j, and b and c are calibration parameters that you'll need to 
+specify in TransCAD. 
+
+Table 4.5 of NCHRP 716 (reproduced below for your convenience) offers example values for b and c used by seven MPOs that use a gamma function for the trip distribution step of their regional travel demand model. 
+
+![](NCHRP-4-5.png)
+
+All of you are working in study areas with more than a million people, which qualifies as a Large MPO, so choosing values from Large MPO 1, 2, or 3 might be a reasonable starting point. They're shown in the table above as negative numbers, but you should enter them as positive numbers in TransCAD. You will also need to speficy a value for _a_.
+
+Here is video showing how to apply a gravity model in TransCAD.
+
+[Applying a gravity model in TransCAD](https://harvard.zoom.us/rec/share/kudGMGZAx447KH-rhEXHoQ4gpYh-aUh90X-p2QrODV63hKpYsijL1yR4a4BcPpY.VG9zqQS4goKakYTV?startTime=1677689782000){target="_blank"}
+
+# Compare average trip lengths
+
+Here's a video that demonstrates how to calculate average trip lengths
+from a PA matrix and travel time skim in TransCAD.
+
+[Calculating average travel time](https://harvard.zoom.us/rec/share/aNSe129SUmxDQ_t4uhjE_6Aqt1RwmZzRj4PQ6jInTUGWrRyuniOEv0L6zr3n1BUz.KbLPHfNGAbwrECBi?startTime=1677691901000){target = "_blank"}
+
+Our model produced an average travel time of about 17 minutes for HBO trips.
+Recall that the survey suggests that the average travel time for HBO trips is 
+about 16 minutes. That's probably close enough, but I could try a adjusting the
+parameter(s) to get it a little closer, or choosing a different type of deterrence 
+function (like a power function or a gamma function). 
+
+# Aggregate matrix flows
+
+To more easily visualize travel flows within your model, it will be helpful to aggregate your traffic analysis zones into larger areas, such 
+as counties.
+
+Hear's a video to demonstrate how to aggregate a production-attraction
+matrix in TransCAD.
+
+[Aggregating a production-attraction matrix](https://harvard.zoom.us/rec/share/YQOEIXuyDJcgrMNy-JMhBbcCLb_HWgZmjI0aw6bbIMaH1k0EOWpJKrwkwpDheXQB.EdY7QrBjJRbX3oEN?startTime=1677693455000){target="_blank"}
+
+# Visualize aggregated flows
+
+TransCAD has some nice tools for visualizing travel flows between
+locations. 
+
+[Visualizing an aggregated production-attraction matrix](https://harvard.zoom.us/rec/share/FPKHYn2o7ShXsw7ggcLfTTWcTnVJY-exwZ7CwEcZW21lE8ZngBNU2EkPBCkyy-vN.c9PVFt0p1U8VVTJx?startTime=1677693858000){target="_blank"}

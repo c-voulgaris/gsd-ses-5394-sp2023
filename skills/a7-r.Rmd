@@ -1,0 +1,437 @@
+---
+title: "Skills for Analysis Assignment 7 (all R)"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::material
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+This page presents methods to applying a gravity model to 
+generate a production-attraction matrix and some methods for 
+visualizing production-attraction flows.
+
+This tutorial demonstrates how do all of the required analysis in R.
+You can find [an alternative version that relies on TransCAD here](https://c-voulgaris.github.io/gsd-ses-5394-sp2023/skills/a7-t.html){target="_blank"}.
+
+This tutorial uses the following packages:
+
+```{r, warning=FALSE, message=FALSE, results='hide'}
+library(here)
+library(tidyverse)
+library(sf)
+library(survey)
+library(srvyr)
+library(od)
+library(ggspatial)
+library(knitr)
+library(readxl)
+library(tigris)
+```
+
+# Install the scenRios package
+
+This is a package I wrote specifically for this class last year, and it's still very much in beta. You'll need to install it from GitHub (this is common for beta versions of new or updated packages).
+
+To install a package from GitHub, you can use the `install_github()` function in the `devtools` package, with the url for the repo where the package is. The repo for the scenRios package is at `https://github.com/c-voulgaris/scenRios`.
+
+```{r, eval=FALSE}
+library(devtools)
+
+install_github("https://github.com/c-voulgaris/scenRios")
+```
+
+Now you can load that package too.
+
+```{r}
+library(scenRios)
+```
+
+# Calculate average travel time by trip purpose
+
+You'll want to check your results by comparing the average travel 
+time for each trip purpose to the average travel time you observe
+from your survey data.
+
+I'll get the average travel time by trip purpose from the NHTS. First I download the data (if you have it saved on your computer from a previous assignment, you can also just load it from wherever you saved it before).
+
+Then I filter to include only the households in my study area and to 
+only include car trips (since I'm using a car skim for my travel times). 
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+trips <- here("nhts",
+     "trippub.csv") %>%
+  read_csv(show_col_types = FALSE) %>%
+  filter(HH_CBSA == "15380") %>%
+  filter(TRPTRANS == "03" | # Car
+           TRPTRANS == "04" | # SUV
+           TRPTRANS == "05" | # Van
+           TRPTRANS == "06") # pickup truck 
+```
+
+Then I create a variable that specifies the trip purpose (as you did for Assignment 6).
+
+```{r}
+trips <- trips %>%
+  mutate(home_based = case_when(WHYTO == "01" ~ TRUE,
+                                WHYTO == "02" ~ TRUE,
+                                WHYFROM == "01" ~ TRUE,
+                                WHYFROM == "02" ~ TRUE,
+                                TRUE ~ FALSE)) %>%
+  mutate(work = ifelse(WHYTO == "03" | WHYFROM == "03", TRUE, FALSE)) %>%
+  mutate(purpose = case_when(home_based & work ~ "HBW",
+                            home_based ~ "HBO",
+                            TRUE ~ "NHB"))
+```
+
+
+Then I create a survey object and calculate the average travel time by trip purpose.
+
+```{r}
+trips_svy <- trips %>%
+  filter(TRVLCMIN > 0) %>%
+  as_survey(weights = WTTRDFIN)
+
+ttime_by_purpose <- trips_svy %>%
+  group_by(purpose) %>%
+  summarise(avg_time = survey_mean(TRVLCMIN))
+
+kable(ttime_by_purpose)
+```
+
+
+# Open production-attraction table and travel time skim
+
+You'll need the travel time skim. You can just use the car skim, 
+since these will be the minimum travel times, or you could
+create a new skim that calculates the minimum travel time 
+across all modes. You'll also need a 
+table with productions and attractions for each zone.
+
+```{r, message=FALSE, results='hide', warning=FALSE}
+car_time <- here("Examples",
+             "rochester",
+             "road-skim.xlsx") %>%
+  read_xlsx(sheet = "TravelTime")
+
+skim <- car_time %>%
+  pivot_longer(cols = -GEOID) %>%
+  mutate(value = as.numeric(value)) %>%
+  mutate(GEOID = as.character(GEOID)) %>%
+  filter(!is.na(value)) %>%
+  rename(from_GEOID = GEOID,
+         to_GEOID = name,
+         car_time = value)
+
+trip_gen <- here("Examples",
+                 "rochester",
+                 "trip-gen.geojson") %>%
+  st_read() 
+```
+
+# Calculate friction factors
+
+You have some options on which function to use to calculate your friction factors. [NCHRP 716](https://www.trb.org/Publications/Blurbs/167055.aspx){target="_blank"} lists three possibilities (see page 45).
+
+## Exponential function 
+
+The exponential function is:
+
+$F_{ijp} = e^{-mt_{ij}}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j. 
+
+Here, I'll calculate the friction factors for HBO trips using an exponential 
+function. I'll pick 0.2 as an initial value for _m_.
+
+```{r}
+skim <- skim %>%
+  mutate(F_HBO = exp(-0.2 * car_time)) 
+```
+
+## Power function
+
+The power function is:
+
+$F_{ijp} = t_{ij}^{-a}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j, and a common value for a would be 2 (for consistency with the Law of Gravity, which is the inspiration for the gravity model). 
+
+Here, I'll calculate the friction factors for NHB trips using a power function.
+
+```{r}
+skim <- skim %>%
+  mutate(F_NHB = car_time^-2) 
+```
+
+## Gamma function
+
+The Gamma function is also called the combined function, since it's just the product of the power function and the exponential function. It can be written as:
+
+$F_{ijp} = t_{ij}^{b}e^{ct_{ij}}$
+
+where $F_{ij}$ is the friction factor for trips with purpose p between zone i and zone j, $t_{ij}$ is the the travel time from zone i to zone j, and b and c are calibration parameters. Table 4.5 of NCHRP 716 (reproduced below for your convenience) offers example values for b and c used by seven MPOs that use a gamma function for the trip distribution step of their regional travel demand model. 
+
+![](NCHRP-4-5.png)
+
+All of you are working in study areas with more than a million people, which qualifies as a Large MPO, so choosing values from Large MPO 1, 2, or 3 might be a reasonable starting point.
+
+Here, I'll calculate the friction factors for HBW trips using a gamma function with parameters from Large MPO 1.
+
+```{r}
+skim <- skim %>%
+  mutate(F_HBW = car_time^-0.503*exp(-0.078*car_time)) 
+```
+
+# Estimate travel flows
+
+The number of trips between Zone i and Zone j is 
+
+$T_{ij} = A_iO_iB_jD_jF_{ij}$, where 
+
+* $T_{ij}$ is the number of trips between i and j
+* $O_i$ is the number of origins (or productions) at Zone i
+* $D_j$ is the number of destinations (or attractions) at Zone j
+* $F_{ij}$ is the friction factor between i and j
+* $A_i$ and $B_j$ are balancing factors, where:
+
+$A_i = \frac{1}{\sum_jB_jD_jF_{ij}}$ and
+$B_j = \frac{1}{\sum_iA_iO_iF_{ij}}$
+
+Since the value of $A_i$ depends of the value of $B_j$ and the value of $B_j$ depends of the value of $A_i$, you'll need to find these values iteratively. The `grvty_balancing()` function takes care of this for you. It takes the following arguments:
+
+* *od_zones*: A data frame with the number of origins and destinations (or productions and attractions) in each zone,
+* *friction*: A data frame with a friction factor for each origin-destination pair,
+* *zone_id*: The name of a column in `od_zones` containing an ID number (or string) for each zone,
+* *zone_o*: The name of a column in `od_zones` containing the number of origins (or productions) in each zone,
+* *zone_d*: The name of a column in `od_zones` containing the number of destinations (or attractions) in each zone,
+* *friction_o_id*: The name of a column in `friction` containing the ID for the origin/production zone,
+* *friction_d_id*: The name of a column in `friction` containing the ID for the destination/attraction zone,
+* *friction_factor*: The name of a column in `friction` containing the friction factor for each origin-destination (or production-attraction) pair,
+* *tolerance*: The minimum acceptable tolerance for trip estimates. In the example below, I'm setting this to 0.01, meaning I'll accept a set of flows where the total number of productions and attractions are within one percent of what I estimated in the trip generation step.
+* *max_iter*: The maximum number of iterations. In this example, I'm setting this to 50,000, so that if I don't achieve my desired tolerance within 50,000 iterations, I'll stop the process anyway. This will keep me from getting stuck in an endless loop if I set a very low tolerance than I can't achieve due to rounding error.
+
+```{r}
+HBO_dist <- grvty_balancing(od_zones = trip_gen,
+                            friction = skim,
+                            zone_id = "GEOID",
+                            zone_o = "hbo_trip_prod",
+                            zone_d = "hbo_bal_attr",
+                            friction_o_id = "from_GEOID",
+                            friction_d_id = "to_GEOID",
+                            friction_factor = "F_HBO",
+                            tolerance = 0.01,
+                            max_iter = 50000)
+```
+
+This returns a list of two data frames: `flows`, and `convergence`. 
+
+`convergence` has three columns: 
+
+* *iteration*: An iteration number,
+* *max_o_diff*: The maximum difference between the number of origins given in `od_zones` and the number produced by the gravity model at a particular iterations,
+* *max_d_diff*: The maximum difference between the number of destinations given in `od_zones` and the number produced by the gravity model at a particular iterations.
+
+Here are the last few rows of `convergence`:
+
+```{r}
+tail(HBO_dist$convergence)
+```
+
+You can see here that in the 41st iteration, both the origins and destinations were within one percent of their targets, so grvty_balancing accepted those values.
+
+`flows` has three columns:
+
+* *o_id*: The ID of the origin/production zone,
+* *d_id*: The ID of the destination/attraction zone, and
+* *flow* : The number of trips between each origin/production and destination/attraction.
+
+```{r}
+head(HBO_dist$flows)
+```
+
+# Compare average trip lengths
+
+Now you can add the flows from your gravity model to your skim dataframe.
+
+```{r}
+HBO_flows <- HBO_dist$flows %>%
+  rename(from_GEOID = o_id,
+         to_GEOID = d_id,
+         HBO_flow = flow)
+
+skim <- skim %>%
+  left_join(HBO_flows)
+```
+
+And you can calculate the average trip length for HBO trips.
+
+```{r}
+avg_HBO_tt <- sum(skim$HBO_flow * skim$car_time) / sum(skim$HBO_flow)
+
+avg_HBO_tt
+```
+
+Our model produced an average travel time of about 17 minutes for HBO trips.
+Recall that the survey suggests that the average travel time for HBO trips is 
+about 16 minutes. That's probably close enough, but I could try a adjusting the
+parameter to get it a little closer, or choosing a different type of deterence 
+function (like a power function or a gamma function). 
+
+# Map desire lines
+
+Desire lines are straight lines connecting origins to destinations and are a useful way to visualize origin-destination data. Here's how you would create a map with desire lines for HBO trips.
+
+```{r, message=FALSE}
+desire_lines_HBO <- od_to_sf(skim, trip_gen, silent = TRUE) %>%
+  filter(HBO_flow > 0)
+
+ggplot(desire_lines_HBO) +
+  annotation_map_tile(type = "cartolight", zoomin = 0, progress = "none") +
+  geom_sf(aes(alpha = HBO_flow)) +
+  theme_void()
+```
+
+It's kind of a mess. You could make it more informative by only including 
+flows above a threshold.
+
+```{r}
+desire_lines_HBO_threshold <- od_to_sf(skim, trip_gen, silent = TRUE) %>%
+  filter(HBO_flow > 1000)
+
+ggplot(desire_lines_HBO_threshold) +
+  annotation_map_tile(type = "cartolight", zoomin = 0, progress = "none") +
+  geom_sf(aes(alpha = HBO_flow)) +
+  theme_void()
+```
+
+Alternatively, you could only show desire lines to and from one specific zone. I can check to see which zone is attracting the most trips.
+
+```{r}
+big_attraction <- trip_gen %>%
+  filter(hbo_bal_attr == max(trip_gen$hbo_bal_attr))
+
+big_attraction$GEOID
+```
+
+So the zones with GEOID 36055009400 has the most trip attractions. Now I can 
+map the desire lines for trips attracted to that zone.
+
+```{r}
+desire_lines_one_zone <- desire_lines_HBO %>%
+  filter(to_GEOID == big_attraction$GEOID)
+
+ggplot(desire_lines_one_zone) +
+  annotation_map_tile(type = "cartolight", zoom = 11, progress = "none") +
+  geom_sf(aes(alpha = HBO_flow)) +
+  theme_void()
+```
+
+# Aggregating zones
+
+Another thing you could try is showing travel flows among groups of zones.
+For example, the Rochester MSA comprises six counties. I might be interested
+in showing the flows among these counties on a map.
+
+It's worth mentioning that your aggregated flows are probably more accurate than
+your disaggregated flows.
+
+```{r, message=FALSE, results='hide'}
+county_skim <- skim %>%
+  mutate(from_county = substr(from_GEOID, 1, 5),
+         to_county = substr(to_GEOID, 1, 5)) %>%
+  group_by(from_county, to_county) %>%
+  summarise(HBO_flow = sum(HBO_flow)) %>%
+  filter(HBO_flow > 0)
+
+
+counties <- counties(state = "NY") %>%
+  filter(NAME %in% c("Livingston",
+                     "Monroe", 
+                     "Ontario", 
+                     "Orleans", 
+                     "Wayne", 
+                     "Yates")) %>%
+  select(GEOID)
+
+desire_lines_HBO_counties <- od_to_sf(county_skim, counties, 
+                                       silent = TRUE) 
+```
+```{r}
+ggplot(desire_lines_HBO_counties) +
+  annotation_map_tile(type = "cartolight", zoomin = 0, progress = "none") +
+  geom_sf(aes(color = HBO_flow,
+              linewidth = HBO_flow),
+          alpha = 0.7) +
+  scale_color_viridis_c(trans = "log") +
+  scale_linewidth(trans = "log") +
+  theme_void()
+```
+
+# Chord diagram
+
+You can use a chord diagram to visualize flows without a map. The `chorddiag`
+package by Matthias Flor makes nice, interactive chord diagrams from 
+matrix data. You can install it from GitHub.
+
+```{r, eval=FALSE}
+install_github("https://github.com/mattflor/chorddiag")
+```
+
+The `chorddiag` package wants your OD flows in matrix form
+
+```{r}
+county_names = c("Livingston",
+                 "Monroe", 
+                 "Ontario", 
+                 "Orleans", 
+                 "Wayne", 
+                 "Yates")
+
+labeled_skim <- tibble(prod_name = sort(rep(county_names, 6)),
+                       attr_name = rep(county_names, 6))
+
+labeled_skim <- labeled_skim %>%
+  mutate(from_county = case_when(
+                         prod_name == "Livingston" ~ "36051",
+                         prod_name == "Monroe" ~ "36055",
+                         prod_name == "Ontario" ~ "36069",
+                         prod_name == "Orleans" ~ "36073",
+                         prod_name == "Wayne" ~ "36117",
+                         prod_name == "Yates" ~ "36123"),
+         to_county = case_when(
+                         attr_name == "Livingston" ~ "36051",
+                         attr_name == "Monroe" ~ "36055",
+                         attr_name == "Ontario" ~ "36069",
+                         attr_name == "Orleans" ~ "36073",
+                         attr_name == "Wayne" ~ "36117",
+                         attr_name == "Yates" ~ "36123")) %>%
+  left_join(county_skim) %>%
+  replace_na(list(HBO_flow = 0))
+
+hbo_mat <- matrix(labeled_skim$HBO_flow,
+                  byrow = TRUE,
+                  nrow = 6, ncol = 6)
+
+dimnames(hbo_mat) <- list(production = county_names,
+                          attraction = county_names)
+
+hbo_mat
+```
+
+And now you can make this cool thing!
+
+```{r}
+library(chorddiag)
+library(RColorBrewer)
+
+chord_palette <- brewer.pal(6, "Set1")
+
+chorddiag(hbo_mat, groupColors = chord_palette, groupnamePadding = 20)
+```
+
