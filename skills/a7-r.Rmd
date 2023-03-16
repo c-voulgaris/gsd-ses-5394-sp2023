@@ -283,6 +283,39 @@ about 16 minutes. That's probably close enough, but I could try a adjusting the
 parameter to get it a little closer, or choosing a different type of deterence 
 function (like a power function or a gamma function). 
 
+# Visualizing distributions
+
+You might be interested in comparing your model's trip length
+distribution to the trip length distribution from your survey.
+
+Here is a histogram of "home-based other" travel times from the survey.
+
+```{r}
+hbo_trips_svy <- trips %>%
+  filter(TRVLCMIN > 0,
+         purpose == "HBO") %>%
+  as_survey(weights = WTTRDFIN)
+
+svyhist(~TRVLCMIN, hbo_trips_svy, breaks = 40,
+        freq = TRUE,
+        main = "",
+        xlab = "Observed travel time for home-based other trips",
+        yaxt = 'n')
+```
+
+And here is a the corresponding histogram from your model.
+
+```{r}
+hbo_trips_model <- skim %>%
+  as_survey(weights = HBO_flow)
+
+svyhist(~car_time, hbo_trips_model, breaks = 40,
+        freq = TRUE,
+        main = "",
+        xlab = "Modeled travel time for home-based other trips",
+        yaxt = 'n')
+```
+
 # Map desire lines
 
 Desire lines are straight lines connecting origins to destinations and are a useful way to visualize origin-destination data. Here's how you would create a map with desire lines for HBO trips.
