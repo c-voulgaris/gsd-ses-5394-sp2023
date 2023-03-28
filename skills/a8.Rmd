@@ -324,9 +324,13 @@ Now I'll do the utilities for HBW trips using model G from Table 4.8. This is
 a nested model. The total utility for a nest with m modes in the nest is given 
 by the logsum:
 
-$U_{nest} = log{\sum\limits_{m} e^{U_{m}}}$
+$U_{nest} = \beta_{nest}log{\sum\limits_{m} e^{U_{m}}}$
+
+$\beta_{nest}$ must be between 0 and 1. We'll start with a value of 0.5.
 
 ```{r}
+beta_car_nest_HBW = 0.5
+
 skims <- skims %>%
   mutate(utility_transit_HBW = transit_const_HBW +
                                transit_in_veh * -0.028  +
@@ -342,10 +346,11 @@ skims <- skims %>%
          exp_u_HOV_HBW = exp(utility_HOV_HBW),
          exp_u_transit_HBW = exp(utility_transit_HBW)) %>%
   rowwise() %>%
-  mutate(utility_car_HBW = log(sum(exp_u_SOV_HBW,
+  mutate(utility_car_HBW_total = log(sum(exp_u_SOV_HBW,
                                        exp_u_HOV_HBW,
-                                       na.rm = TRUE))) %>%
-  mutate(exp_u_car_HBW = exp(utility_car_HBW)) %>%
+                                       na.rm = TRUE)),
+         utility_car_HBW_nest = beta_car_nest_HBW * utility_car_HBW_total) %>%
+  mutate(exp_u_car_HBW = exp(utility_car_HBW_nest)) %>%
   mutate(total_utility_HBW = sum(exp_u_car_HBW,
                                  exp_u_transit_HBW,
                                  na.rm = TRUE)) %>%
@@ -381,7 +386,7 @@ share of car trips that will be HOV trips.
 ```{r}
 skims <- skims %>%
   mutate(p_transit_HBW = exp(utility_transit_HBW) / total_utility_HBW,
-         p_car_HBW = exp(utility_car_HBW) / total_utility_HBW) %>%
+         p_car_HBW = exp(utility_car_HBW_nest) / total_utility_HBW) %>%
   replace_na(list(p_transit_HBW = 0,
                   p_car_HBW = 0))
 
@@ -394,8 +399,8 @@ The car dominates for HBW trips. Now let's divide those car trips into HOV and S
 
 ```{r}
 skims <- skims %>%
-  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW),
-         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW))
+  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW_total),
+         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW_total))
 
 head(skims) %>%
   select(fromId, toId, p_SOV_if_car_HBW, p_HOV_if_car_HBW)
@@ -489,6 +494,7 @@ I'll try increasing the mode-specific constants as follows:
     * Transit: No change
     * SOV: from 2.31 to 1.0
     * HOV: from -2.31 to -1.0
+    * Nesting coefficient: No change
 
 I didn't guess these values on my first try. I had to fiddle around with them a little. 
 
@@ -536,10 +542,11 @@ skims <- skims %>%
          exp_u_HOV_HBW = exp(utility_HOV_HBW),
          exp_u_transit_HBW = exp(utility_transit_HBW)) %>%
   rowwise() %>%
-  mutate(utility_car_HBW = log(sum(exp_u_SOV_HBW,
+  mutate(utility_car_HBW_total = log(sum(exp_u_SOV_HBW,
                                        exp_u_HOV_HBW,
-                                       na.rm = TRUE))) %>%
-  mutate(exp_u_car_HBW = exp(utility_car_HBW)) %>%
+                                       na.rm = TRUE)),
+         utility_car_HBW_nest = beta_car_nest_HBW * utility_car_HBW_total) %>%
+  mutate(exp_u_car_HBW = exp(utility_car_HBW_nest)) %>%
   mutate(total_utility_HBW = sum(exp_u_car_HBW,
                                  exp_u_transit_HBW,
                                  na.rm = TRUE)) %>%
@@ -551,11 +558,11 @@ skims <- skims %>%
                   p_SOV_HBO = 0,
                   p_HOV_HBO = 0)) %>%
   mutate(p_transit_HBW = exp(utility_transit_HBW) / total_utility_HBW,
-         p_car_HBW = exp(utility_car_HBW) / total_utility_HBW) %>%
+         p_car_HBW = exp(utility_car_HBW_nest) / total_utility_HBW) %>%
   replace_na(list(p_transit_HBW = 0,
                   p_car_HBW = 0)) %>%
-  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW),
-         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW)) %>%
+  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW_total),
+         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW_total)) %>%
   mutate(p_SOV_HBW = p_SOV_if_car_HBW * p_car_HBW,
          p_HOV_HBW = p_HOV_if_car_HBW * p_car_HBW) %>%
   mutate(n_transit_HBO = round(HBO_flow * p_transit_HBO),

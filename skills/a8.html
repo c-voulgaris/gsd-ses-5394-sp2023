@@ -1906,9 +1906,13 @@ non-nested model.</p>
 <p>Now I’ll do the utilities for HBW trips using model G from Table 4.8.
 This is a nested model. The total utility for a nest with m modes in the
 nest is given by the logsum:</p>
-<p><span class="math inline">\(U_{nest} = log{\sum\limits_{m}
-e^{U_{m}}}\)</span></p>
-<pre class="r"><code>skims &lt;- skims %&gt;%
+<p><span class="math inline">\(U_{nest} =
+\beta_{nest}log{\sum\limits_{m} e^{U_{m}}}\)</span></p>
+<p><span class="math inline">\(\beta_{nest}\)</span> must be between 0
+and 1. We’ll start with a value of 0.5.</p>
+<pre class="r"><code>beta_car_nest_HBW = 0.5
+
+skims &lt;- skims %&gt;%
   mutate(utility_transit_HBW = transit_const_HBW +
                                transit_in_veh * -0.028  +
                                transit_out_veh * -0.065 +
@@ -1923,10 +1927,11 @@ e^{U_{m}}}\)</span></p>
          exp_u_HOV_HBW = exp(utility_HOV_HBW),
          exp_u_transit_HBW = exp(utility_transit_HBW)) %&gt;%
   rowwise() %&gt;%
-  mutate(utility_car_HBW = log(sum(exp_u_SOV_HBW,
+  mutate(utility_car_HBW_total = log(sum(exp_u_SOV_HBW,
                                        exp_u_HOV_HBW,
-                                       na.rm = TRUE))) %&gt;%
-  mutate(exp_u_car_HBW = exp(utility_car_HBW)) %&gt;%
+                                       na.rm = TRUE)),
+         utility_car_HBW_nest = beta_car_nest_HBW * utility_car_HBW_total) %&gt;%
+  mutate(exp_u_car_HBW = exp(utility_car_HBW_nest)) %&gt;%
   mutate(total_utility_HBW = sum(exp_u_car_HBW,
                                  exp_u_transit_HBW,
                                  na.rm = TRUE)) %&gt;%
@@ -1963,7 +1968,7 @@ car, and then we’ll calculate the share of car trips that will be HOV
 trips.</p>
 <pre class="r"><code>skims &lt;- skims %&gt;%
   mutate(p_transit_HBW = exp(utility_transit_HBW) / total_utility_HBW,
-         p_car_HBW = exp(utility_car_HBW) / total_utility_HBW) %&gt;%
+         p_car_HBW = exp(utility_car_HBW_nest) / total_utility_HBW) %&gt;%
   replace_na(list(p_transit_HBW = 0,
                   p_car_HBW = 0))
 
@@ -1981,8 +1986,8 @@ head(skims) %&gt;%
 <p>The car dominates for HBW trips. Now let’s divide those car trips
 into HOV and SOV trips.</p>
 <pre class="r"><code>skims &lt;- skims %&gt;%
-  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW),
-         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW))
+  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW_total),
+         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW_total))
 
 head(skims) %&gt;%
   select(fromId, toId, p_SOV_if_car_HBW, p_HOV_if_car_HBW)</code></pre>
@@ -2112,6 +2117,7 @@ these gaps.</p>
 <li>Transit: No change</li>
 <li>SOV: from 2.31 to 1.0</li>
 <li>HOV: from -2.31 to -1.0</li>
+<li>Nesting coefficient: No change</li>
 </ul></li>
 </ul>
 <p>I didn’t guess these values on my first try. I had to fiddle around
@@ -2158,10 +2164,11 @@ skims &lt;- skims %&gt;%
          exp_u_HOV_HBW = exp(utility_HOV_HBW),
          exp_u_transit_HBW = exp(utility_transit_HBW)) %&gt;%
   rowwise() %&gt;%
-  mutate(utility_car_HBW = log(sum(exp_u_SOV_HBW,
+  mutate(utility_car_HBW_total = log(sum(exp_u_SOV_HBW,
                                        exp_u_HOV_HBW,
-                                       na.rm = TRUE))) %&gt;%
-  mutate(exp_u_car_HBW = exp(utility_car_HBW)) %&gt;%
+                                       na.rm = TRUE)),
+         utility_car_HBW_nest = beta_car_nest_HBW * utility_car_HBW_total) %&gt;%
+  mutate(exp_u_car_HBW = exp(utility_car_HBW_nest)) %&gt;%
   mutate(total_utility_HBW = sum(exp_u_car_HBW,
                                  exp_u_transit_HBW,
                                  na.rm = TRUE)) %&gt;%
@@ -2173,11 +2180,11 @@ skims &lt;- skims %&gt;%
                   p_SOV_HBO = 0,
                   p_HOV_HBO = 0)) %&gt;%
   mutate(p_transit_HBW = exp(utility_transit_HBW) / total_utility_HBW,
-         p_car_HBW = exp(utility_car_HBW) / total_utility_HBW) %&gt;%
+         p_car_HBW = exp(utility_car_HBW_nest) / total_utility_HBW) %&gt;%
   replace_na(list(p_transit_HBW = 0,
                   p_car_HBW = 0)) %&gt;%
-  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW),
-         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW)) %&gt;%
+  mutate(p_SOV_if_car_HBW = exp(utility_SOV_HBW) / exp(utility_car_HBW_total),
+         p_HOV_if_car_HBW = exp(utility_HOV_HBW) / exp(utility_car_HBW_total)) %&gt;%
   mutate(p_SOV_HBW = p_SOV_if_car_HBW * p_car_HBW,
          p_HOV_HBW = p_HOV_if_car_HBW * p_car_HBW) %&gt;%
   mutate(n_transit_HBO = round(HBO_flow * p_transit_HBO),
