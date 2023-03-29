@@ -1,0 +1,212 @@
+---
+title: "Skills for Analysis Assignment 9"
+author: "GSD SES 5394"
+date: "Spring 2023"
+output: 
+  rmdformats::downcute
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+The following methods will be useful for Analysis Assignment 9.
+
+# Required packages
+
+The skills in this tutorial draw on the `here` package, the `tidyverse` package, the `tigris` package, and the `sf` package, which are all familiar to you now.
+
+```{r, warning=FALSE, message=FALSE, results='hide'}
+library(tidyverse)
+library(sf)
+library(here)
+library(tigris)
+```
+
+# Calculate total vehicle trips for each PA pair
+
+You should have finished Assignment 8 with a table of production-attraction
+flows, including the following columns:
+
+* Production zone GEOID
+* Attraction zone GEOID
+* Number of HBO trips by SOV
+* Number of HBO trips by HOV
+* Number of HBW trips by SOV
+* Number of HBW trips by HOV
+* Number of NHB trips by SOV
+* Number of NHB trips by HOV
+
+You can use combine these columns to calculate the total number of
+SOV trips for each trip purpose, and the total number of HOV trips for 
+each trip purpose. You can get the number of HOV _vehicle_ trips by 
+dividing the number of HOV (person) trips by an assumed vehicle occupancy
+(this should be consistent with the vehicle occupancy you used for calculating
+costs in the previous assignment). The number of SOV vehicle trips is the
+same as the number of SOV person trips.
+
+Finally add up all vehicle trips across both modes and all three trip 
+purposes to get the total number of vehicles traveling between each 
+production-attraction pair.
+
+# Prepare PA matrix for import to TransCAD
+
+You'll end up with a table that looks something like this:
+
+```{r, echo=FALSE, message=FALSE, results='hide'}
+PA_mat = here("Examples",
+              "OKC",
+              "pa-mat-ctv.csv") %>%
+  read_csv(show_col_types = FALSE)
+
+id_geoid_xwalk <- here("Examples",
+                      "OKC",
+                      "zones.geojson") %>%
+  st_read() %>%
+  st_drop_geometry() %>%
+  select(GEOID, centroid)
+
+xwalk_from <- id_geoid_xwalk %>%
+  rename(from_node = centroid,
+         from_GEOID = GEOID)
+
+xwalk_to <- id_geoid_xwalk %>%
+  rename(to_node = centroid,
+         to_GEOID = GEOID)
+
+PA_mat_GEOID <- left_join(PA_mat, xwalk_from) %>%
+  left_join(xwalk_to) %>%
+  select(from_GEOID, to_GEOID, flow) %>%
+  replace_na(list(flow = 0))
+
+```
+
+```{r}
+head(PA_mat_GEOID)
+```
+
+You'll want to change the GEOID values to the node IDs that
+TransCAD is using.
+
+## Export centroids with node IDs from TransCAD
+
+Here is a video that demonstrates how to export the centroid
+locations with ID numbers from TransCAD:
+
+[Exporting TransCAD centroids with IDs](https://harvard.zoom.us/rec/share/2zTI_LGWk5ltj0ZcwhVctngImhnPMfHl9G7fhkto4lqdFOP_TBIZHJRLnf6RwSR-.Bhi2l7A9LRboEkQr?startTime=1680106518000){target="_blank"}
+
+# Add centroid node IDs to PA matrix
+
+Now you can take those centroid locations you just exported from TransCAD
+and open them in R.
+
+```{r, results='hide', message=FALSE}
+transcad_points <- here("Examples",
+                  "OKC",
+                  "okc-centroids.json") %>%
+  st_read()
+```
+
+Let's take a look at the first few rows:
+
+```{r}
+head(transcad_points)
+```
+
+## Associate PA matrix with TransCAD IDs
+
+Now we want to associate each of those points from TransCAD with
+a GEOID. I'll get the locations of the census tracts from the
+`tigris` package. I want to just use the tract centroids, and 
+I need everything to be in the WGS 84 coordinate reference system.
+
+```{r, message=FALSE, results='hide'}
+GEOID_tracts <- tracts(state = "OK",
+                       county = c("Canadian",
+                          "cleveland",
+                          "Grady",
+                          "Lincoln",
+                          "Logan",
+                          "McClain",
+                          "Oklahoma")) %>%
+  st_transform("WGS84") %>%
+  st_centroid()
+```
+
+Now I can use the st_join to associate TransCAD's ID numbers
+with the GEOID for each tract.
+
+```{r}
+xwalk <- st_join(GEOID_tracts, transcad_points, 
+                 join = st_nearest_feature) %>%
+  select(GEOID, ID_copy) %>%
+  st_drop_geometry()
+
+head(xwalk)
+```
+
+And from there, I can switch out the GEOIDs in my PA matrix
+for the corresponding TransCAD IDs.
+
+```{r}
+xwalk_from <- xwalk %>%
+  rename(from_node = ID_copy,
+         from_GEOID = GEOID)
+
+xwalk_to <- xwalk %>%
+  rename(to_node = ID_copy,
+         to_GEOID = GEOID)
+
+PA_mat_transcad <- left_join(PA_mat_GEOID, xwalk_from) %>%
+  left_join(xwalk_to) %>%
+  select(from_node, to_node, flow)
+
+head(PA_mat_transcad)
+```
+
+Now you can save that as a csv file that you'll open in TransCAD.
+
+```{r}
+write_csv(PA_mat_transcad,
+          here("Examples",
+               "OKC",
+               "PA_mat_total_vehs.csv"))
+```
+
+
+# Import PA matrix to TransCAD
+
+Here's a video that demonstrates how to open that as a
+production-attraction matrix in TransCAD.
+
+[Import PA matrix into TransCAD](https://harvard.zoom.us/rec/share/vQYyxjyqmBJuNBqkEefK6vncQqZW6KXyQgnB9dRfSG9QoEVWuZJCut-DQhOWTlR7.9KtpLmldQhGCHkcI?startTime=1680108053000){target="_blank"}
+
+# Generate 1-hour OD ma
+
+You'll need to generate a one-hour origin-destination matrix from a
+24-hour production-attraction matrix.
+
+[Generate OD matrix from PA matrix](https://harvard.zoom.us/rec/share/3ckEyAjUBm5CGOVDZxtZuVWvLcdsV5xGuwfZU82YHYDXd0ti_tO6Y4Q-ow6bWzUi.YUn5sGBOB8etfAYG?startTime=1680108237000){target="_blank"}
+
+# Add capacities to road network
+
+The trip assignment method requires you to define the capacity
+of each roadway link and recreate the newtwork file.
+
+[Define capacities](https://harvard.zoom.us/rec/share/jnwAY-tR7t-TP1Cpl_I4SDIVh2Ahzt0YUSb0RmwQ6kX6sBzDZuabogjDH4Fl8CaM.0oxWTsZgsgv7JS9_?startTime=1680108484000){target="_blank"}
+
+# Estimate trip assignment
+
+And now you can assign trips to the network.
+
+[Assign trips](https://harvard.zoom.us/rec/share/4NlMcM0HBDow1duAtqD7LTQnF92haC5JgT56Qtvxuz_-DV_cAMdjEHoJw5yGBplk.FUZ7dCLPFyG02RD4?startTime=1680108824000){target="_blank"}
+
+# Visualize link flows
+
+Finally, you can visualize link flows within TransCAD.
+
+[Visualize link flows](https://harvard.zoom.us/rec/share/KrUTFCNDAr4n86WEZI6uSMMRzh8zI7Ddbap4_nmQrvyGhnrDmjFvKwotDQY2wVlv.vbXTK6BHkgtop9YG?startTime=1680110777000){target="_blank"}
+
+You can also export your layers and use R or ArcGIS to do further visualization.
